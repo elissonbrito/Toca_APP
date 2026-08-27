@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-brand-black text-brand-white font-body;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #111111; }
+  ::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3A3A3A; }
+}
+
+@layer components {
+  .card {
+    @apply bg-brand-card border border-brand-border rounded-xl shadow-card;
+  }
+
+  .btn-primary {
+    @apply bg-brand-red hover:bg-brand-red-hover text-white font-medium
+           px-4 py-2 rounded-lg transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-brand-gold focus:ring-offset-2 focus:ring-offset-brand-dark
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-gold {
+    @apply bg-brand-gold hover:bg-brand-gold-light text-brand-black font-semibold
+           px-4 py-2 rounded-lg transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-brand-gold focus:ring-offset-2 focus:ring-offset-brand-dark;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent hover:bg-brand-border text-brand-muted hover:text-brand-white
+           px-4 py-2 rounded-lg transition-all duration-200 border border-brand-border;
+  }
+
+  .btn-danger {
+    @apply bg-red-900 hover:bg-red-800 text-white font-medium
+           px-4 py-2 rounded-lg transition-all duration-200;
+  }
+
+  .input {
+    @apply w-full bg-brand-dark border border-brand-border rounded-lg px-3 py-2
+           text-brand-white placeholder-brand-muted
+           focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold
+           transition-colors duration-200;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-brand-muted mb-1;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+
+  .table-header {
+    @apply text-xs font-semibold text-brand-muted uppercase tracking-wider;
+  }
+
+  .page-title {
+    @apply font-display text-2xl font-bold text-brand-white;
+  }
+}
+
+/* Toast overrides */
+.Toastify__toast {
+  background: #1A1A1A !important;
+  border: 1px solid #2A2A2A !important;
+  color: #F5F0E8 !important;
+  font-family: 'DM Sans', sans-serif !important;
+}
+.Toastify__progress-bar--success { background: #C9A84C !important; }
+.Toastify__progress-bar--error { background: #8B1A1A !important; }

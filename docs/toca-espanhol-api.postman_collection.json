@@ -1,0 +1,140 @@
+{
+  "info": {
+    "name": "Toca do Espanhol API",
+    "description": "Coleção completa de endpoints da API do Sistema Toca do Espanhol. Importável no Postman e no Insomnia. Rode 'Auth > Login' primeiro para popular access_token/refresh_token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "var json = pm.response.json();",
+            "pm.collectionVariables.set('access_token', json.access);",
+            "pm.collectionVariables.set('refresh_token', json.refresh);"
+          ], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"admin@toca.com\",\"password\":\"123456\"}" }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "var json = pm.response.json();",
+            "if (json.access) pm.collectionVariables.set('access_token', json.access);",
+            "if (json.refresh) pm.collectionVariables.set('refresh_token', json.refresh);"
+          ], "type": "text/javascript" } }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/refresh/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}" }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/logout/",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"refresh\":\"{{refresh_token}}\"}" }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/auth/me/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Usuários",
+      "item": [
+        { "name": "Listar", "request": { "method": "GET", "url": "{{base_url}}/users/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Criar (ADM_MAXIMO)", "request": { "method": "POST", "url": "{{base_url}}/users/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"name\":\"Novo Usuário\",\"email\":\"novo@toca.com\",\"password\":\"SenhaForte123\",\"password_confirm\":\"SenhaForte123\",\"role\":\"GARCOM\"}" } } },
+        { "name": "Detalhe", "request": { "method": "GET", "url": "{{base_url}}/users/1/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Atualizar", "request": { "method": "PATCH", "url": "{{base_url}}/users/2/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"role\":\"GERENTE\"}" } } },
+        { "name": "Desativar", "request": { "method": "DELETE", "url": "{{base_url}}/users/2/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } }
+      ]
+    },
+    {
+      "name": "Mesas",
+      "item": [
+        { "name": "Listar", "request": { "method": "GET", "url": "{{base_url}}/tables/?status=LIVRE", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Criar (GERENTE+)", "request": { "method": "POST", "url": "{{base_url}}/tables/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"number\":21,\"seats\":4}" } } },
+        { "name": "Editar (GERENTE+)", "request": { "method": "PATCH", "url": "{{base_url}}/tables/1/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"seats\":6,\"observation\":\"Mesa da janela\"}" } } },
+        { "name": "Trocar Status (operacional)", "request": { "method": "POST", "url": "{{base_url}}/tables/1/status/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"status\":\"RESERVADA\"}" } } },
+        { "name": "Remover (GERENTE+)", "request": { "method": "DELETE", "url": "{{base_url}}/tables/21/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } }
+      ]
+    },
+    {
+      "name": "Pedidos",
+      "item": [
+        { "name": "Listar", "request": { "method": "GET", "url": "{{base_url}}/orders/?status=ABERTO", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Abrir Comanda (GARCOM+)", "request": { "method": "POST", "url": "{{base_url}}/orders/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"table\":1,\"customer_name\":\"João Silva\",\"people_count\":2}" } } },
+        { "name": "Detalhe", "request": { "method": "GET", "url": "{{base_url}}/orders/1/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Adicionar Item (GARCOM+)", "request": { "method": "POST", "url": "{{base_url}}/orders/1/add_item/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"product_name\":\"Picanha 400g\",\"quantity\":1,\"unit_price\":89.90,\"sector\":\"PARRILLA\"}" } } },
+        { "name": "Cancelar Item (GARCOM+)", "request": { "method": "DELETE", "url": "{{base_url}}/orders/1/items/1/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Atualizar Status", "request": { "method": "POST", "url": "{{base_url}}/orders/1/update_status/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"status\":\"PREPARANDO\"}" } } }
+      ]
+    },
+    {
+      "name": "Cozinha / Parrilla",
+      "item": [
+        { "name": "Fila Cozinha", "request": { "method": "GET", "url": "{{base_url}}/kitchen/orders/?sector=COZINHA", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Fila Parrilla", "request": { "method": "GET", "url": "{{base_url}}/kitchen/orders/?sector=PARRILLA", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Avançar Item", "request": { "method": "PATCH", "url": "{{base_url}}/kitchen/items/1/status/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"status\":\"PRONTO\"}" } } }
+      ]
+    },
+    {
+      "name": "Fila de Espera",
+      "item": [
+        { "name": "Listar", "request": { "method": "GET", "url": "{{base_url}}/queue/?status=AGUARDANDO", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Emitir Senha (RECEPCAO+)", "request": { "method": "POST", "url": "{{base_url}}/queue/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"customer_name\":\"Família Silva\",\"people_count\":4}" } } },
+        { "name": "Chamar Próxima (RECEPCAO+)", "request": { "method": "POST", "url": "{{base_url}}/queue/call_next/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Finalizar (RECEPCAO+)", "request": { "method": "POST", "url": "{{base_url}}/queue/1/finalize/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Cancelar (RECEPCAO+)", "request": { "method": "POST", "url": "{{base_url}}/queue/1/cancel/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Painel Público (sem auth)", "request": { "method": "GET", "url": "{{base_url}}/queue/public_display/" } }
+      ]
+    },
+    {
+      "name": "Caixa",
+      "item": [
+        { "name": "Caixa Atual", "request": { "method": "GET", "url": "{{base_url}}/cash-register/registers/current/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Abrir Caixa", "request": { "method": "POST", "url": "{{base_url}}/cash-register/registers/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"initial_amount\":200.00,\"observations\":\"Abertura do turno\"}" } } },
+        { "name": "Registrar Pagamento", "request": { "method": "POST", "url": "{{base_url}}/cash-register/payments/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"order\":1,\"amount\":89.90,\"payment_method\":\"PIX\"}" } } },
+        { "name": "Listar Pagamentos", "request": { "method": "GET", "url": "{{base_url}}/cash-register/payments/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Relatório do Caixa", "request": { "method": "GET", "url": "{{base_url}}/cash-register/registers/1/report/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } },
+        { "name": "Fechar Caixa", "request": { "method": "POST", "url": "{{base_url}}/cash-register/registers/1/close/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"final_amount\":450.00,\"observations\":\"Fechamento sem divergência\"}" } } }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        { "name": "Visão Geral (GERENTE+)", "request": { "method": "GET", "url": "{{base_url}}/dashboard/", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } }
+      ]
+    },
+    {
+      "name": "Auditoria",
+      "item": [
+        { "name": "Listar Logs (GERENTE+)", "request": { "method": "GET", "url": "{{base_url}}/audit/?action=LOGIN", "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }] } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+# Blueprint do Render — 1 Postgres + backend Django + frontend estático.
+# Uso: Render Dashboard → New → Blueprint → aponte para este repositório.
+databases:
+  - name: toca-espanhol-db
+    databaseName: toca_espanhol
+    user: tocauser
+    plan: free
+
+services:
+  # ── Backend (Django + Gunicorn) ─────────────────────────────
+  - type: web
+    name: toca-espanhol-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    healthCheckPath: /health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: toca-espanhol-db
+          property: connectionString
+      - key: DB_SSL_REQUIRE
+        value: "True"
+      - key: JWT_ACCESS_LIFETIME_MIN
+        value: "15"
+      - key: JWT_REFRESH_LIFETIME_DAYS
+        value: "7"
+      # O host *.onrender.com do próprio serviço entra sozinho (RENDER_EXTERNAL_HOSTNAME).
+      # CORS já libera qualquer *.onrender.com via regex no settings.
+
+  # ── Frontend (Vite build → estático) ───────────────────────
+  - type: web
+    name: toca-espanhol-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Defina após o primeiro deploy do backend, ex.:
+      #   https://toca-espanhol-api.onrender.com/api
+      - key: VITE_API_URL
+        sync: false
