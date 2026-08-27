@@ -5,26 +5,20 @@ Django settings for Toca do Espanhol Restaurant Management System.
 import os
 from pathlib import Path
 from datetime import timedelta
+
+import dj_database_url
 from dotenv import load_dotenv
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-me')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-change-me')
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
-# Render injeta o hostname público da instância nesta variável.
-RENDER_HOST = os.getenv('RENDER_EXTERNAL_HOSTNAME')
-if RENDER_HOST:
-    ALLOWED_HOSTS.append(RENDER_HOST)
-
-CSRF_TRUSTED_ORIGINS = [
-    o.strip() for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()
-]
-if RENDER_HOST:
-    CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_HOST}')
+# Django exige o Origin em CSRF_TRUSTED_ORIGINS para POSTs no admin sob HTTPS.
+CSRF_TRUSTED_ORIGINS = [f'https://{h}' for h in ALLOWED_HOSTS if h]
 
 # Atrás do proxy HTTPS do Render.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -96,28 +90,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database
-# Prioridade: DATABASE_URL (Render/Heroku) > variáveis DB_* separadas (local).
+# Database — DATABASE_URL (Render injeta automaticamente; local vem do .env).
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'toca_espanhol'),
-        'USER': os.getenv('DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-    }
-}
-
-DATABASE_URL = os.getenv('DATABASE_URL')
-if DATABASE_URL:
-    import dj_database_url
-
-    DATABASES['default'] = dj_database_url.parse(
-        DATABASE_URL,
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600,
-        ssl_require=os.getenv('DB_SSL_REQUIRE', 'True') == 'True',
     )
+}
 
 # Auth
 AUTH_USER_MODEL = 'users.User'
@@ -137,15 +116,17 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# WhiteNoise: serve os estáticos do admin/DRF em produção sem servidor extra.
-# Manifest storage só fora de DEBUG (evita erro de manifesto ausente no dev local).
-_staticfiles_backend = (
-    'django.contrib.staticfiles.storage.StaticFilesStorage' if DEBUG
-    else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-)
+# WhiteNoise serve os estáticos do admin/DRF em produção sem servidor extra.
+# Em Django 5 o antigo STATICFILES_STORAGE é definido pela chave 'staticfiles' de STORAGES.
+# Manifest storage só fora de DEBUG (evita erro de manifesto ausente no runserver local).
 STORAGES = {
     'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
-    'staticfiles': {'BACKEND': _staticfiles_backend},
+    'staticfiles': {
+        'BACKEND': (
+            'django.contrib.staticfiles.storage.StaticFilesStorage' if DEBUG
+            else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+        ),
+    },
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -185,12 +166,8 @@ SIMPLE_JWT = {
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
 }
 
-# CORS
+# CORS — lista separada por vírgula na variável de ambiente CORS_ALLOWED_ORIGINS.
 CORS_ALLOWED_ORIGINS = [
-    o.strip() for o in os.getenv(
-        'CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:3000'
-    ).split(',') if o.strip()
+    o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()
 ]
-# Libera qualquer front hospedado em *.onrender.com (útil para testes no Render).
-CORS_ALLOWED_ORIGIN_REGEXES = [r'^https://.*\.onrender\.com$']
 CORS_ALLOW_CREDENTIALS = True
