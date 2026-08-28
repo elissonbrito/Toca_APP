@@ -35,6 +35,7 @@ const BADGE_COLORS = {
   ENTREGUE:   'bg-purple-900/40 text-purple-400 border-purple-800',
   AGUARDANDO: 'bg-yellow-900/40 text-yellow-400 border-yellow-800',
   CHAMADO:    'bg-blue-900/40 text-blue-400 border-blue-800',
+  SENTADO:    'bg-green-900/40 text-green-400 border-green-800',
   ADM_MAXIMO: 'bg-brand-gold/20 text-brand-gold border-brand-gold/40',
   GERENTE:    'bg-purple-900/40 text-purple-400 border-purple-800',
   GARCOM:     'bg-blue-900/40 text-blue-400 border-blue-800',

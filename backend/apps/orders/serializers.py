@@ -25,20 +25,20 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
-    """Aceita um item do cardápio (menu_item) OU lançamento por texto livre."""
-    product_name = serializers.CharField(required=False, allow_blank=True)
-    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    sector = serializers.CharField(required=False)
+    """Lançamento de item na comanda — somente itens ativos do cardápio."""
 
     class Meta:
         model = OrderItem
-        fields = ['menu_item', 'product_name', 'quantity', 'unit_price', 'sector', 'observations']
+        fields = ['menu_item', 'quantity', 'observations']
+        extra_kwargs = {
+            'menu_item': {'required': True, 'allow_null': False},
+            'quantity': {'min_value': 1},
+        }
 
-    def validate(self, attrs):
-        if not attrs.get('menu_item') and not (attrs.get('product_name') and attrs.get('unit_price') is not None):
-            raise serializers.ValidationError(
-                'Informe "menu_item" ou então "product_name" e "unit_price".')
-        return attrs
+    def validate_menu_item(self, value):
+        if value is None or not value.is_active:
+            raise serializers.ValidationError('Selecione um item ativo do cardápio.')
+        return value
 
 
 class OrderSerializer(serializers.ModelSerializer):

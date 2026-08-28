@@ -1,26 +1,30 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, ChefHat } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { ArrowLeft, Plus, Trash2, ChefHat, Search, BookOpen } from 'lucide-react'
 import { toast } from 'react-toastify'
-import { ordersAPI } from '../../services/api'
-import { Modal, StatusBadge, LoadingSpinner, FormField, ConfirmDialog } from '../../components/ui/index.jsx'
+import { ordersAPI, menuAPI } from '../../services/api'
+import { Modal, StatusBadge, LoadingSpinner, ConfirmDialog } from '../../components/ui/index.jsx'
 
-const SECTORS = ['COZINHA', 'PARRILLA', 'BAR']
 const STATUS_FLOW = {
   ABERTO: ['PREPARANDO', 'CANCELADO'],
   PREPARANDO: ['PRONTO', 'CANCELADO'],
   PRONTO: ['FINALIZADO'],
 }
+const CLOSED = ['FINALIZADO', 'CANCELADO']
 
 export default function OrderDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [showAddItem, setShowAddItem] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(null)
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
+
+  // cardápio
+  const [menuItems, setMenuItems] = useState([])
+  const [menuSearch, setMenuSearch] = useState('')
+  const [qty, setQty] = useState({})       // { [menuItemId]: number }
+  const [adding, setAdding] = useState(null) // menuItemId em processamento
 
   const load = useCallback(() => {
     ordersAPI.get(id)
@@ -31,32 +35,54 @@ export default function OrderDetailPage() {
 
   useEffect(() => { load() }, [load])
 
-  const handleAddItem = async (data) => {
+  useEffect(() => {
+    menuAPI.listItems({ is_active: true, page_size: 500, ordering: 'name' })
+      .then(r => setMenuItems(r.data.results || r.data))
+      .catch(() => {})
+  }, [])
+
+  const addFromMenu = async (menuItem) => {
+    setAdding(menuItem.id)
     try {
-      await ordersAPI.addItem(id, { ...data, unit_price: Number(data.unit_price), quantity: Number(data.quantity) })
-      toast.success('Item adicionado!')
-      reset(); setShowAddItem(false); load()
-    } catch { toast.error('Erro ao adicionar item') }
+      await ordersAPI.addItem(id, {
+        menu_item: menuItem.id,
+        quantity: Number(qty[menuItem.id]) || 1,
+      })
+      toast.success(`+ ${menuItem.name}`)
+      setQty(q => ({ ...q, [menuItem.id]: 1 }))
+      load()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erro ao lançar o item.')
+    } finally {
+      setAdding(null)
+    }
   }
 
-  const handleRemoveItem = async (itemId) => {
-    try {
-      await ordersAPI.removeItem(id, itemId)
-      toast.success('Item removido'); load()
-    } catch { toast.error('Erro ao remover item') }
+  const removeItem = async (itemId) => {
+    try { await ordersAPI.removeItem(id, itemId); toast.success('Item removido'); load() }
+    catch { toast.error('Erro ao remover item') }
   }
 
-  const handleStatus = async (status) => {
-    try {
-      await ordersAPI.updateStatus(id, status)
-      toast.success(`Status → ${status}`); load()
-    } catch { toast.error('Erro ao atualizar status') }
+  const changeStatus = async (status) => {
+    try { await ordersAPI.updateStatus(id, status); toast.success(`Status → ${status}`); load() }
+    catch { toast.error('Erro ao atualizar status') }
   }
+
+  const grouped = useMemo(() => {
+    const q = menuSearch.trim().toLowerCase()
+    const list = q
+      ? menuItems.filter(i =>
+          i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
+      : menuItems
+    const by = {}
+    for (const it of list) (by[it.category_name || 'Outros'] ||= []).push(it)
+    return Object.entries(by).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [menuItems, menuSearch])
 
   if (loading) return <LoadingSpinner size="lg" className="h-64" />
   if (!order) return null
 
-  const canEdit = ['ABERTO'].includes(order.status)
+  const canEdit = !CLOSED.includes(order.status)
   const nextStatuses = STATUS_FLOW[order.status] || []
 
   return (
@@ -82,35 +108,38 @@ export default function OrderDetailPage() {
       </div>
 
       {/* Actions */}
-      {nextStatuses.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          {nextStatuses.map(s => (
-            <button
-              key={s}
-              onClick={() => s === 'CANCELADO' ? setConfirmCancel(s) : handleStatus(s)}
-              className={s === 'CANCELADO' ? 'btn-danger' : s === 'FINALIZADO' ? 'btn-gold' : 'btn-primary'}
-            >
-              → {s}
-            </button>
-          ))}
-          {canEdit && (
-            <button className="btn-ghost flex items-center gap-2" onClick={() => setShowAddItem(true)}>
-              <Plus size={16} /> Adicionar Item
-            </button>
-          )}
-        </div>
-      )}
+      <div className="flex gap-2 flex-wrap">
+        {nextStatuses.map(s => (
+          <button
+            key={s}
+            onClick={() => s === 'CANCELADO' ? setConfirmCancel(s) : changeStatus(s)}
+            className={s === 'CANCELADO' ? 'btn-danger' : s === 'FINALIZADO' ? 'btn-gold' : 'btn-primary'}
+          >
+            → {s}
+          </button>
+        ))}
+        {canEdit && (
+          <button className="btn-primary flex items-center gap-2" onClick={() => setShowMenu(true)}>
+            <BookOpen size={16} /> Lançar do Cardápio
+          </button>
+        )}
+      </div>
 
-      {/* Items Table */}
+      {/* Items */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-brand-border">
-          <h2 className="font-display text-base font-semibold text-brand-white">Itens do Pedido</h2>
+          <h2 className="font-display text-base font-semibold text-brand-white">Itens da Comanda</h2>
           <span className="text-brand-muted text-sm">{order.items?.length || 0} itens</span>
         </div>
         {!order.items?.length ? (
           <div className="p-8 text-center">
             <ChefHat size={40} className="text-brand-border mx-auto mb-3" />
-            <p className="text-brand-muted">Nenhum item adicionado ainda.</p>
+            <p className="text-brand-muted">Nenhum item lançado ainda.</p>
+            {canEdit && (
+              <button className="btn-ghost mt-4 inline-flex items-center gap-2" onClick={() => setShowMenu(true)}>
+                <Plus size={15} /> Lançar do cardápio
+              </button>
+            )}
           </div>
         ) : (
           <table className="w-full">
@@ -139,7 +168,7 @@ export default function OrderDetailPage() {
                   {canEdit && (
                     <td className="p-4">
                       {item.status !== 'CANCELADO' && (
-                        <button onClick={() => handleRemoveItem(item.id)} className="text-brand-muted hover:text-red-500 transition-colors">
+                        <button onClick={() => removeItem(item.id)} className="text-brand-muted hover:text-red-500 transition-colors">
                           <Trash2 size={15} />
                         </button>
                       )}
@@ -152,41 +181,66 @@ export default function OrderDetailPage() {
         )}
       </div>
 
-      {/* Add Item Modal */}
-      <Modal open={showAddItem} onClose={() => setShowAddItem(false)} title="Adicionar Item">
-        <form onSubmit={handleSubmit(handleAddItem)} className="space-y-4">
-          <FormField label="Produto" error={errors.product_name?.message}>
-            <input {...register('product_name', { required: 'Obrigatório' })} className="input" placeholder="Nome do produto" />
-          </FormField>
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Quantidade" error={errors.quantity?.message}>
-              <input {...register('quantity', { required: true, min: 1 })} type="number" className="input" defaultValue={1} />
-            </FormField>
-            <FormField label="Preço Unitário" error={errors.unit_price?.message}>
-              <input {...register('unit_price', { required: true, min: 0 })} type="number" step="0.01" className="input" placeholder="0.00" />
-            </FormField>
+      {/* Menu picker */}
+      <Modal open={showMenu} onClose={() => setShowMenu(false)} title="Cardápio" size="lg">
+        <div className="space-y-4">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
+            <input
+              className="input pl-9"
+              placeholder="Buscar item…"
+              value={menuSearch}
+              onChange={e => setMenuSearch(e.target.value)}
+              autoFocus
+            />
           </div>
-          <FormField label="Setor">
-            <select {...register('sector')} className="input">
-              {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Observações">
-            <textarea {...register('observations')} className="input resize-none" rows={2} placeholder="Sem cebola, etc." />
-          </FormField>
-          <div className="flex gap-3 justify-end pt-2">
-            <button type="button" className="btn-ghost" onClick={() => setShowAddItem(false)}>Cancelar</button>
-            <button type="submit" className="btn-primary">Adicionar</button>
+
+          <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-4">
+            {grouped.length === 0 && (
+              <p className="text-brand-muted text-sm text-center py-6">Nenhum item encontrado.</p>
+            )}
+            {grouped.map(([cat, items]) => (
+              <div key={cat}>
+                <h4 className="text-brand-gold text-xs font-semibold uppercase tracking-wide mb-2">{cat}</h4>
+                <div className="space-y-1">
+                  {items.map(it => (
+                    <div key={it.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-brand-dark/60">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-brand-white text-sm truncate">{it.name}</div>
+                        <div className="text-brand-muted text-xs">R$ {Number(it.price).toFixed(2)} · {it.sector_display}</div>
+                      </div>
+                      <input
+                        type="number" min="1"
+                        className="input w-16 text-center py-1"
+                        value={qty[it.id] ?? 1}
+                        onChange={e => setQty(q => ({ ...q, [it.id]: e.target.value }))}
+                      />
+                      <button
+                        className="btn-primary py-1.5 px-3 text-sm flex items-center gap-1 disabled:opacity-50"
+                        disabled={adding === it.id}
+                        onClick={() => addFromMenu(it)}
+                      >
+                        <Plus size={14} /> Lançar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
-        </form>
+
+          <div className="flex justify-end pt-2 border-t border-brand-border">
+            <button className="btn-ghost" onClick={() => setShowMenu(false)}>Fechar</button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog
         open={!!confirmCancel}
         onClose={() => setConfirmCancel(null)}
-        onConfirm={() => { handleStatus('CANCELADO'); setConfirmCancel(null) }}
-        title="Cancelar Pedido"
-        message="Tem certeza que deseja cancelar este pedido? Esta ação não pode ser desfeita."
+        onConfirm={() => { changeStatus('CANCELADO'); setConfirmCancel(null) }}
+        title="Cancelar Comanda"
+        message="Tem certeza que deseja cancelar esta comanda? Esta ação não pode ser desfeita."
         danger
       />
     </div>

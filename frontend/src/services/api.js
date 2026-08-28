@@ -96,6 +96,7 @@ export const queueAPI = {
   callNext: () => api.post('/queue/call_next/'),
   finalize: (id) => api.post(`/queue/${id}/finalize/`),
   cancel: (id) => api.post(`/queue/${id}/cancel/`),
+  assignTable: (id, data) => api.post(`/queue/${id}/assign-table/`, data),
 }
 
 // ─── Cash Register ─────────────────────────────────────

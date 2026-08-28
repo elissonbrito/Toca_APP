@@ -5,6 +5,7 @@ from django.conf import settings
 class TicketStatus(models.TextChoices):
     AGUARDANDO = 'AGUARDANDO', 'Aguardando'
     CHAMADO = 'CHAMADO', 'Chamado'
+    SENTADO = 'SENTADO', 'Na mesa'
     FINALIZADO = 'FINALIZADO', 'Finalizado'
     CANCELADO = 'CANCELADO', 'Cancelado'
 
@@ -18,6 +19,13 @@ class QueueTicket(models.Model):
         max_length=15,
         choices=TicketStatus.choices,
         default=TicketStatus.AGUARDANDO
+    )
+    table = models.ForeignKey(
+        'tables.Table',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='queue_tickets',
+        verbose_name='Mesa destinada',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     called_at = models.DateTimeField(null=True, blank=True)

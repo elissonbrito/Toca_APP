@@ -12,7 +12,10 @@ from apps.audit.services import AuditService
 
 
 class QueueTicketViewSet(viewsets.ModelViewSet):
-    queryset = QueueTicket.objects.select_related('called_by').all()
+    queryset = (QueueTicket.objects
+                .select_related('called_by', 'table')
+                .prefetch_related('orders')
+                .all())
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status']
 
@@ -28,7 +31,7 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         if self.action in ['update', 'partial_update', 'destroy']:
             return [IsManager()]
-        # create, call_next, finalize, cancel
+        # create, call_next, finalize, cancel, assign_table -> ADM/GERENTE/RECEPÇÃO
         return [IsRecepcao()]
 
     def create(self, request, *args, **kwargs):
@@ -80,3 +83,27 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
             details=f'Senha {ticket.code} cancelada', request=request,
         )
         return Response(QueueTicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'], url_path='assign-table')
+    def assign_table(self, request, pk=None):
+        """Destina a senha a uma mesa e (por padrão) abre a comanda."""
+        from apps.tables.models import Table
+
+        ticket = self.get_object()
+        table = Table.objects.filter(pk=request.data.get('table')).first()
+        if table is None:
+            return Response({'table': 'Mesa não encontrada.'}, status=400)
+        open_order = request.data.get('open_order', True)
+
+        ticket, order = QueueService.assign_table(
+            ticket, table, seated_by=request.user, open_order=bool(open_order),
+        )
+        AuditService.log(
+            user=request.user, action='UPDATE', entity='QueueTicket', entity_id=ticket.id,
+            details=(f'Senha {ticket.code} enviada para a Mesa {table.number}'
+                     + (f' — comanda #{order.id} aberta' if order else '')),
+            request=request,
+        )
+        data = QueueTicketSerializer(ticket).data
+        data['order_id'] = order.id if order else None
+        return Response(data)

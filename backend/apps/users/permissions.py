@@ -59,6 +59,14 @@ class IsGarcom(BasePermission):
         ]
 
 
+class IsFloorStaff(BasePermission):
+    """Quem opera o salão: garçom, recepção, gerente, admin (pode abrir comandas)."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in [
+            UserRole.GARCOM, UserRole.RECEPCAO, UserRole.ADM_MAXIMO, UserRole.GERENTE
+        ]
+
+
 class IsRecepcao(BasePermission):
     """Recepção access."""
     def has_permission(self, request, view):

@@ -41,6 +41,13 @@ class Order(models.Model):
         related_name='opened_orders',
         verbose_name='Aberto por'
     )
+    queue_ticket = models.ForeignKey(
+        'queue.QueueTicket',
+        on_delete=models.SET_NULL,
+        related_name='orders',
+        null=True, blank=True,
+        verbose_name='Senha de origem',
+    )
     status = models.CharField(
         'Status',
         max_length=15,

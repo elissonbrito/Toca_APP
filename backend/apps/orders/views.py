@@ -11,7 +11,7 @@ from .serializers import (
     OrderItemSerializer, OrderItemCreateSerializer,
 )
 from .services import OrderService
-from apps.users.permissions import IsManager, IsGarcom
+from apps.users.permissions import IsManager, IsFloorStaff
 from apps.audit.services import AuditService
 
 
@@ -27,12 +27,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         return OrderSerializer
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'update_status']:
-            return [IsAuthenticated()]
         if self.action in ['update', 'partial_update', 'destroy']:
             return [IsManager()]
-        # create, add_item, remove_item
-        return [IsGarcom()]
+        if self.action == 'create':
+            return [IsFloorStaff()]
+        # list, retrieve, update_status, add_item, remove_item:
+        # qualquer usuário com acesso à comanda pode lançar/remover itens.
+        return [IsAuthenticated()]
 
     # --- create -------------------------------------------------------------
     def create(self, request, *args, **kwargs):
