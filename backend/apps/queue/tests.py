@@ -96,3 +96,42 @@ class QueueTests(APITestCase):
         second = self._ticket()
         r = self.client.post(f'/api/queue/{second}/assign-table/', {'table': self.table.id}, format='json')
         self.assertEqual(r.status_code, 400)
+
+    def test_open_order_for_ticket_has_no_table(self):
+        tid = self._ticket()
+        self.client.force_authenticate(self.garcom)  # garçom pode lançar pela senha
+        r = self.client.post(f'/api/queue/{tid}/open-order/', {}, format='json')
+        self.assertEqual(r.status_code, 201)
+        self.assertIsNone(r.data['table'])
+        self.assertTrue(r.data['queue_ticket_code'])
+
+    def test_open_order_twice_returns_same_order(self):
+        tid = self._ticket()
+        self.client.force_authenticate(self.garcom)
+        a = self.client.post(f'/api/queue/{tid}/open-order/', {}, format='json').data['id']
+        b = self.client.post(f'/api/queue/{tid}/open-order/', {}, format='json').data['id']
+        self.assertEqual(a, b)
+
+    def test_assign_table_transfers_waiting_order_with_items(self):
+        from apps.menu.models import MenuCategory, MenuItem
+        cat = MenuCategory.objects.create(name='Bar')
+        chopp = MenuItem.objects.create(
+            category=cat, name='Chopp', sector='BAR', price='16.00', sku='CHOPP',
+            ncm='22030000', cfop='5405', csosn='500', cest='0301100', origem='0',
+            unit_commercial='UN', unit_taxable='UN', pis_cst='49', cofins_cst='49',
+        )
+        tid = self._ticket()
+        self.client.force_authenticate(self.garcom)
+        oid = self.client.post(f'/api/queue/{tid}/open-order/', {}, format='json').data['id']
+        self.client.post(f'/api/orders/{oid}/add_item/', {'menu_item': chopp.id, 'quantity': 1}, format='json')
+
+        self.client.force_authenticate(self.recep)
+        r = self.client.post(f'/api/queue/{tid}/assign-table/', {'table': self.table.id}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['order_id'], oid)
+
+        order = Order.objects.get(pk=oid)
+        self.assertEqual(order.table_id, self.table.id)
+        self.assertEqual(order.items.filter(product_name='Chopp').count(), 1)
+        self.table.refresh_from_db()
+        self.assertEqual(self.table.status, TableStatus.OCUPADA)

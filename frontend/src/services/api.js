@@ -80,6 +80,9 @@ export const ordersAPI = {
   addItem: (orderId, data) => api.post(`/orders/${orderId}/add_item/`, data),
   removeItem: (orderId, itemId) => api.delete(`/orders/${orderId}/items/${itemId}/`),
   updateStatus: (orderId, status) => api.post(`/orders/${orderId}/update_status/`, { status }),
+  closeBill: (orderId) => api.post(`/orders/${orderId}/close_bill/`),
+  reopenBill: (orderId) => api.post(`/orders/${orderId}/reopen_bill/`),
+  cancelBill: (orderId) => api.delete(`/orders/${orderId}/`),
 }
 
 // ─── Kitchen ───────────────────────────────────────────
@@ -97,6 +100,7 @@ export const queueAPI = {
   finalize: (id) => api.post(`/queue/${id}/finalize/`),
   cancel: (id) => api.post(`/queue/${id}/cancel/`),
   assignTable: (id, data) => api.post(`/queue/${id}/assign-table/`, data),
+  openOrder: (id) => api.post(`/queue/${id}/open-order/`),
 }
 
 // ─── Cash Register ─────────────────────────────────────
@@ -108,6 +112,7 @@ export const cashAPI = {
   listRegisters: () => api.get('/cash-register/registers/'),
   createPayment: (data) => api.post('/cash-register/payments/', data),
   listPayments: (params) => api.get('/cash-register/payments/', { params }),
+  pendingOrders: () => api.get('/cash-register/registers/pending-orders/'),
 }
 
 // ─── Menu / Cardápio ───────────────────────────────────

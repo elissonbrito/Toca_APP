@@ -24,7 +24,7 @@ class CashRegisterOpenSerializer(serializers.ModelSerializer):
 
 
 class PaymentSerializer(serializers.ModelSerializer):
-    order_table = serializers.IntegerField(source='order.table.number', read_only=True)
+    order_table = serializers.IntegerField(source='order.table.number', read_only=True, default=None)
     received_by_name = serializers.CharField(source='received_by.name', read_only=True)
     payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
 

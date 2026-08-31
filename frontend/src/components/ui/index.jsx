@@ -24,11 +24,13 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
 const BADGE_COLORS = {
   LIVRE:      'bg-green-900/40 text-green-400 border-green-800',
   OCUPADA:    'bg-brand-red/20 text-red-400 border-brand-red/40',
+  CONTA:      'bg-purple-900/40 text-purple-300 border-purple-700',
   RESERVADA:  'bg-blue-900/40 text-blue-400 border-blue-800',
   LIMPEZA:    'bg-yellow-900/40 text-yellow-400 border-yellow-800',
   ABERTO:     'bg-green-900/40 text-green-400 border-green-800',
   PREPARANDO: 'bg-yellow-900/40 text-yellow-400 border-yellow-800',
   PRONTO:     'bg-blue-900/40 text-blue-400 border-blue-800',
+  FECHAMENTO: 'bg-purple-900/40 text-purple-300 border-purple-700',
   FINALIZADO: 'bg-gray-800 text-gray-400 border-gray-700',
   CANCELADO:  'bg-red-950 text-red-500 border-red-900',
   PENDENTE:   'bg-orange-900/40 text-orange-400 border-orange-800',

@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { toast } from 'react-toastify'
 
 const NAV_ITEMS = [
-  { to: '/',        icon: LayoutDashboard, label: 'Dashboard',  exact: true },
+  { to: '/',        icon: LayoutDashboard, label: 'Dashboard',  exact: true, roles: ['ADM_MAXIMO'] },
   { to: '/tables',  icon: UtensilsCrossed, label: 'Mesas' },
   { to: '/orders',  icon: ClipboardList,   label: 'Pedidos' },
   { to: '/menu',    icon: BookOpen,        label: 'Cardápio' },

@@ -57,6 +57,19 @@ class CashRegisterViewSet(viewsets.ModelViewSet):
         data['register'] = CashRegisterSerializer(data['register']).data
         return Response(data)
 
+    @action(detail=False, methods=['get'], url_path='pending-orders')
+    def pending_orders(self, request):
+        """Contas fechadas aguardando baixa no caixa (em evidência)."""
+        from apps.orders.models import Order, OrderStatus
+        from apps.orders.serializers import OrderSerializer
+
+        orders = (Order.objects
+                  .filter(status=OrderStatus.FECHAMENTO)
+                  .select_related('table', 'opened_by', 'queue_ticket')
+                  .prefetch_related('items')
+                  .order_by('created_at'))
+        return Response(OrderSerializer(orders, many=True).data)
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.select_related('order', 'order__table', 'cash_register', 'received_by').all()
@@ -71,14 +84,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = PaymentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment = PaymentService.register_payment(
+        payment, invoice = PaymentService.register_payment(
             received_by=request.user,
             **serializer.validated_data,
         )
         AuditService.log(
             user=request.user, action='CREATE', entity='Payment', entity_id=payment.id,
-            details=(f'Pagamento de R$ {payment.amount} via {payment.payment_method} '
-                     f'no Pedido #{payment.order_id}'),
+            details=(f'Baixa de R$ {payment.amount} via {payment.payment_method} '
+                     f'no Pedido #{payment.order_id}'
+                     + (f' — NFC-e {invoice.get_status_display()}' if invoice else '')),
             request=request,
         )
-        return Response(PaymentSerializer(payment).data, status=201)
+        data = PaymentSerializer(payment).data
+        if invoice is not None:
+            from apps.fiscal.serializers import InvoiceSerializer
+            data['invoice'] = InvoiceSerializer(invoice).data
+        return Response(data, status=201)

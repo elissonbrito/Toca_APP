@@ -72,11 +72,16 @@ class PaymentService:
     @staticmethod
     @transaction.atomic
     def register_payment(*, order, amount, payment_method, received_by, observations=''):
+        """Dá baixa na conta: registra o pagamento, finaliza a comanda, libera a
+        mesa e dispara a NFC-e automaticamente. Retorna (payment, invoice|None).
+        """
         register = CashRegisterService.current_open()
         if register is None:
             raise ValidationError('Nenhum caixa aberto. Abra o caixa antes de registrar pagamentos.')
         if order.status in CLOSED_STATUSES:
             raise ValidationError({'order': 'Este pedido já está finalizado ou cancelado.'})
+        if order.table_id is None:
+            raise ValidationError({'order': 'Comanda de senha sem mesa — destine a senha a uma mesa antes.'})
 
         payment = Payment.objects.create(
             order=order,
@@ -86,6 +91,15 @@ class PaymentService:
             received_by=received_by,
             observations=observations,
         )
-        # Finaliza a comanda pela regra central (fecha comanda + manda mesa p/ limpeza).
-        OrderService.change_status(order, OrderStatus.FINALIZADO)
-        return payment
+        # Finaliza a comanda e LIBERA a mesa (baixa no caixa -> mesa disponível).
+        OrderService.change_status(order, OrderStatus.FINALIZADO, free_table=True)
+
+        # Lançamento fiscal automático (não bloqueia a baixa se algo falhar).
+        invoice = None
+        try:
+            from apps.fiscal.services import NFCeService
+            order.refresh_from_db()
+            invoice = NFCeService.build_from_order(order, user=received_by)
+        except Exception:
+            invoice = None
+        return payment, invoice

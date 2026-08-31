@@ -12,23 +12,52 @@ from apps.tables.models import TableStatus
 from .models import Order, OrderItem, OrderStatus, ItemStatus
 
 CLOSED_STATUSES = {OrderStatus.FINALIZADO, OrderStatus.CANCELADO}
+# Estados em que a comanda não aceita mais itens novos.
+LOCKED_FOR_ITEMS = CLOSED_STATUSES | {OrderStatus.FECHAMENTO}
 
 
 class OrderService:
     @staticmethod
     @transaction.atomic
-    def open_order(*, table, opened_by, customer_name='', people_count=1, observations=''):
-        """Abre uma comanda e marca a mesa como ocupada."""
-        if table.orders.exclude(status__in=CLOSED_STATUSES).exists():
+    def open_order(*, table=None, opened_by, customer_name='', people_count=1,
+                   observations='', queue_ticket=None):
+        """Abre uma comanda.
+
+        Com ``table``: marca a mesa como ocupada (comanda normal).
+        Sem ``table`` (só ``queue_ticket``): comanda "da senha", o cliente pede
+        enquanto espera; a mesa é vinculada depois via :meth:`attach_table`.
+        """
+        if table is not None and table.orders.exclude(status__in=CLOSED_STATUSES).exists():
             raise ValidationError({'table': 'Já existe uma comanda aberta para esta mesa.'})
 
         order = Order.objects.create(
             table=table,
             opened_by=opened_by,
+            queue_ticket=queue_ticket,
             customer_name=customer_name,
             people_count=people_count,
             observations=observations,
         )
+        if table is not None and table.status != TableStatus.OCUPADA:
+            table.status = TableStatus.OCUPADA
+            table.save(update_fields=['status', 'updated_at'])
+        return order
+
+    @staticmethod
+    @transaction.atomic
+    def attach_table(order, table):
+        """Vincula uma mesa a uma comanda que ainda não tem mesa (comanda da senha).
+
+        Os itens já lançados ficam na comanda — passam a pertencer à mesa.
+        """
+        if order.status in CLOSED_STATUSES:
+            raise ValidationError('Esta comanda já foi finalizada ou cancelada.')
+        if (table.orders.exclude(status__in=CLOSED_STATUSES)
+                .exclude(pk=order.pk).exists()):
+            raise ValidationError({'table': f'Mesa {table.number} já tem uma comanda aberta.'})
+
+        order.table = table
+        order.save(update_fields=['table'])
         if table.status != TableStatus.OCUPADA:
             table.status = TableStatus.OCUPADA
             table.save(update_fields=['status', 'updated_at'])
@@ -44,9 +73,9 @@ class OrderService:
         override explícito) e os dados fiscais são congelados no item (snapshot).
         Caso contrário, aceita lançamento por texto livre (retrocompatível).
         """
-        if order.status in CLOSED_STATUSES:
+        if order.status in LOCKED_FOR_ITEMS:
             raise ValidationError(
-                'Não é possível adicionar itens a um pedido finalizado ou cancelado.'
+                'A conta está fechada/finalizada — reabra a comanda para lançar mais itens.'
             )
 
         fiscal_snapshot = {}
@@ -72,6 +101,11 @@ class OrderService:
             **fiscal_snapshot,
         )
         order.recalculate_total()
+        # Nova rodada de pedidos numa comanda que já estava "pronta":
+        # volta para PREPARANDO para o item novo chegar à cozinha/painel.
+        if order.status in (OrderStatus.PRONTO, OrderStatus.ABERTO):
+            order.status = OrderStatus.PREPARANDO
+            order.save(update_fields=['status'])
         return item
 
     @staticmethod
@@ -108,7 +142,7 @@ class OrderService:
         order = item.order
         if new_status == ItemStatus.PRONTO:
             remaining = order.items.filter(status__in=OrderService.ACTIVE_ITEM_STATUSES).exists()
-            if not remaining and order.status not in CLOSED_STATUSES:
+            if not remaining and order.status not in LOCKED_FOR_ITEMS:
                 order.status = OrderStatus.PRONTO
                 order.save(update_fields=['status'])
         elif new_status in OrderService.ACTIVE_ITEM_STATUSES and order.status == OrderStatus.PRONTO:
@@ -120,11 +154,48 @@ class OrderService:
 
     @staticmethod
     @transaction.atomic
-    def change_status(order, new_status):
+    def close_bill(order):
+        """"Fechar conta": manda a comanda para o caixa (status FECHAMENTO).
+
+        A mesa passa a "aguardando pagamento" (TableStatus.CONTA) e a conta fica
+        em evidência no caixa. Não aceita mais itens (salvo reabertura).
+        """
+        if order.status in CLOSED_STATUSES:
+            raise ValidationError('Esta comanda já está finalizada ou cancelada.')
+        if order.status == OrderStatus.FECHAMENTO:
+            return OrderStatus.FECHAMENTO, order
+        if not order.items.exclude(status=ItemStatus.CANCELADO).exists():
+            raise ValidationError('Não há itens lançados nesta comanda.')
+
+        old_status = order.status
+        order.status = OrderStatus.FECHAMENTO
+        order.save(update_fields=['status'])
+        if order.table_id and order.table.status != TableStatus.CONTA:
+            order.table.status = TableStatus.CONTA
+            order.table.save(update_fields=['status', 'updated_at'])
+        return old_status, order
+
+    @staticmethod
+    @transaction.atomic
+    def reopen_bill(order):
+        """Reabre uma conta que foi fechada mas ainda não foi paga."""
+        if order.status != OrderStatus.FECHAMENTO:
+            raise ValidationError('Só é possível reabrir uma conta que está em fechamento.')
+        order.status = OrderStatus.PRONTO if order.items.exists() else OrderStatus.ABERTO
+        order.save(update_fields=['status'])
+        if order.table_id:
+            order.table.status = TableStatus.OCUPADA
+            order.table.save(update_fields=['status', 'updated_at'])
+        return order
+
+    @staticmethod
+    @transaction.atomic
+    def change_status(order, new_status, *, free_table=False):
         """Aplica uma transição de status na comanda.
 
-        Retorna (status_anterior, order). Ao finalizar, fecha a comanda e
-        manda a mesa para limpeza.
+        Retorna (status_anterior, order). Ao FINALIZAR: fecha a comanda e libera
+        a mesa (``free_table=True`` -> LIVRE, caso do pagamento no caixa; senão
+        -> LIMPEZA). Ao CANCELAR: libera a mesa (LIVRE).
         """
         if new_status not in OrderStatus.values:
             raise ValidationError({'status': 'Status inválido.'})
@@ -133,19 +204,26 @@ class OrderService:
         if old_status == new_status:
             return old_status, order
 
+        if new_status == OrderStatus.FINALIZADO and order.table_id is None:
+            raise ValidationError(
+                'Vincule uma mesa à comanda da senha antes de finalizar.')
+
+        if new_status == OrderStatus.CANCELADO and order.payments.exists():
+            raise ValidationError(
+                'Esta conta já tem pagamento registrado — não pode ser cancelada.')
+
         order.status = new_status
         update_fields = ['status']
 
-        if new_status == OrderStatus.FINALIZADO:
+        if new_status in (OrderStatus.FINALIZADO, OrderStatus.CANCELADO):
             order.closed_at = timezone.now()
             update_fields.append('closed_at')
-            order.table.status = TableStatus.LIMPEZA
-            order.table.save(update_fields=['status', 'updated_at'])
-        elif new_status == OrderStatus.CANCELADO:
-            order.closed_at = timezone.now()
-            update_fields.append('closed_at')
-            order.table.status = TableStatus.LIVRE
-            order.table.save(update_fields=['status', 'updated_at'])
+            if order.table_id:
+                if new_status == OrderStatus.CANCELADO or free_table:
+                    order.table.status = TableStatus.LIVRE
+                else:
+                    order.table.status = TableStatus.LIMPEZA
+                order.table.save(update_fields=['status', 'updated_at'])
 
         order.save(update_fields=update_fields)
         return old_status, order

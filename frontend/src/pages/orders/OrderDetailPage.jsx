@@ -1,20 +1,20 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, ChefHat, Search, BookOpen } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ChefHat, Search, BookOpen, Receipt, Undo2 } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { ordersAPI, menuAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, ConfirmDialog } from '../../components/ui/index.jsx'
+import { useAuth } from '../../context/AuthContext'
 
-const STATUS_FLOW = {
-  ABERTO: ['PREPARANDO', 'CANCELADO'],
-  PREPARANDO: ['PRONTO', 'CANCELADO'],
-  PRONTO: ['FINALIZADO'],
-}
-const CLOSED = ['FINALIZADO', 'CANCELADO']
+const NO_ITEMS = ['FINALIZADO', 'CANCELADO', 'FECHAMENTO']
+const CAN_CLOSE_FROM = ['ABERTO', 'PREPARANDO', 'PRONTO']
 
 export default function OrderDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { hasRole } = useAuth()
+  const isCaixa = hasRole('CAIXA', 'ADM_MAXIMO', 'GERENTE')
+  const canCloseBill = hasRole('GARCOM', 'RECEPCAO', 'CAIXA', 'ADM_MAXIMO', 'GERENTE')
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showMenu, setShowMenu] = useState(false)
@@ -60,12 +60,23 @@ export default function OrderDetailPage() {
 
   const removeItem = async (itemId) => {
     try { await ordersAPI.removeItem(id, itemId); toast.success('Item removido'); load() }
-    catch { toast.error('Erro ao remover item') }
+    catch (e) { toast.error(e.response?.status === 403 ? 'Só o caixa pode excluir itens lançados.' : 'Erro ao remover item') }
   }
 
   const changeStatus = async (status) => {
     try { await ordersAPI.updateStatus(id, status); toast.success(`Status → ${status}`); load() }
-    catch { toast.error('Erro ao atualizar status') }
+    catch (e) { toast.error(e.response?.data?.detail || 'Erro ao atualizar status') }
+  }
+
+  const closeBill = async () => {
+    if (!confirm('Fechar a conta? Ela vai para o caixa.')) return
+    try { await ordersAPI.closeBill(id); toast.success('Conta fechada — enviada para o caixa.'); load() }
+    catch (e) { toast.error(e.response?.data?.detail || e.response?.data?.[0] || 'Erro ao fechar a conta.') }
+  }
+
+  const reopenBill = async () => {
+    try { await ordersAPI.reopenBill(id); toast.success('Conta reaberta.'); load() }
+    catch (e) { toast.error(e.response?.data?.detail || 'Erro ao reabrir a conta.') }
   }
 
   const grouped = useMemo(() => {
@@ -82,8 +93,8 @@ export default function OrderDetailPage() {
   if (loading) return <LoadingSpinner size="lg" className="h-64" />
   if (!order) return null
 
-  const canEdit = !CLOSED.includes(order.status)
-  const nextStatuses = STATUS_FLOW[order.status] || []
+  const canAddItems = !NO_ITEMS.includes(order.status)
+  const canRemoveItem = isCaixa && !['FINALIZADO', 'CANCELADO'].includes(order.status)
 
   return (
     <div className="animate-fade-in space-y-6 max-w-3xl">
@@ -93,7 +104,11 @@ export default function OrderDetailPage() {
         </button>
         <div className="flex-1">
           <h1 className="font-display text-2xl font-bold text-brand-white">
-            Comanda #{order.id} — Mesa {order.table?.number}
+            Comanda #{order.id} — {order.table
+              ? `Mesa ${order.table.number}`
+              : order.queue_ticket_code
+                ? `Senha ${order.queue_ticket_code} (aguardando mesa)`
+                : 'sem mesa'}
           </h1>
           <div className="flex items-center gap-3 mt-1">
             <StatusBadge status={order.status} label={order.status_display} />
@@ -107,20 +122,35 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
+      {/* Conta fechada -> aviso */}
+      {order.status === 'FECHAMENTO' && (
+        <div className="card p-4 border-purple-700/50 bg-purple-950/20 flex items-center justify-between flex-wrap gap-3">
+          <p className="text-purple-200 text-sm flex items-center gap-2">
+            <Receipt size={16} /> Conta fechada — aguardando pagamento no caixa.
+          </p>
+          {isCaixa && (
+            <button className="btn-ghost text-sm flex items-center gap-2" onClick={reopenBill}>
+              <Undo2 size={15} /> Reabrir conta
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex gap-2 flex-wrap">
-        {nextStatuses.map(s => (
-          <button
-            key={s}
-            onClick={() => s === 'CANCELADO' ? setConfirmCancel(s) : changeStatus(s)}
-            className={s === 'CANCELADO' ? 'btn-danger' : s === 'FINALIZADO' ? 'btn-gold' : 'btn-primary'}
-          >
-            → {s}
-          </button>
-        ))}
-        {canEdit && (
+        {canAddItems && (
           <button className="btn-primary flex items-center gap-2" onClick={() => setShowMenu(true)}>
             <BookOpen size={16} /> Lançar do Cardápio
+          </button>
+        )}
+        {canCloseBill && CAN_CLOSE_FROM.includes(order.status) && order.table && (
+          <button className="btn-gold flex items-center gap-2" onClick={closeBill}>
+            <Receipt size={16} /> Fechar Conta
+          </button>
+        )}
+        {isCaixa && !['FINALIZADO', 'CANCELADO'].includes(order.status) && (
+          <button className="btn-danger" onClick={() => setConfirmCancel(true)}>
+            Cancelar conta
           </button>
         )}
       </div>
@@ -135,7 +165,7 @@ export default function OrderDetailPage() {
           <div className="p-8 text-center">
             <ChefHat size={40} className="text-brand-border mx-auto mb-3" />
             <p className="text-brand-muted">Nenhum item lançado ainda.</p>
-            {canEdit && (
+            {canAddItems && (
               <button className="btn-ghost mt-4 inline-flex items-center gap-2" onClick={() => setShowMenu(true)}>
                 <Plus size={15} /> Lançar do cardápio
               </button>
@@ -151,7 +181,7 @@ export default function OrderDetailPage() {
                 <th className="table-header text-right p-4">Unit.</th>
                 <th className="table-header text-right p-4">Total</th>
                 <th className="table-header text-center p-4">Status</th>
-                {canEdit && <th className="table-header p-4"></th>}
+                {canRemoveItem && <th className="table-header p-4"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-border">
@@ -165,7 +195,7 @@ export default function OrderDetailPage() {
                   <td className="p-4 text-right text-brand-muted">R$ {Number(item.unit_price).toFixed(2)}</td>
                   <td className="p-4 text-right font-medium text-brand-white">R$ {Number(item.total_price).toFixed(2)}</td>
                   <td className="p-4 text-center"><StatusBadge status={item.status} label={item.status_display} /></td>
-                  {canEdit && (
+                  {canRemoveItem && (
                     <td className="p-4">
                       {item.status !== 'CANCELADO' && (
                         <button onClick={() => removeItem(item.id)} className="text-brand-muted hover:text-red-500 transition-colors">

@@ -65,7 +65,10 @@ export default function OrdersPage() {
               {orders.map(o => (
                 <tr key={o.id} className="hover:bg-brand-dark/50 transition-colors">
                   <td className="p-4 text-brand-muted font-mono text-sm">#{o.id}</td>
-                  <td className="p-4 font-medium text-brand-white">Mesa {o.table?.number}</td>
+                  <td className="p-4 font-medium text-brand-white">
+                    {o.table ? `Mesa ${o.table.number}`
+                      : o.queue_ticket_code ? `Senha ${o.queue_ticket_code}` : '—'}
+                  </td>
                   <td className="p-4 text-brand-muted text-sm">{o.customer_name || '—'}</td>
                   <td className="p-4 text-brand-muted text-sm">{o.items?.length || 0}</td>
                   <td className="p-4 text-right font-medium text-brand-gold">

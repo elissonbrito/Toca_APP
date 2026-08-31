@@ -51,15 +51,49 @@ class QueueService:
         return ticket
 
     @staticmethod
+    def active_order(ticket):
+        """Comanda em aberto da senha (a que o cliente usa enquanto espera), se houver."""
+        return ticket.orders.exclude(status__in=['FINALIZADO', 'CANCELADO']).first()
+
+    @staticmethod
+    @transaction.atomic
+    def open_order_for_ticket(ticket, *, opened_by):
+        """Abre uma comanda vinculada à senha, ainda SEM mesa.
+
+        Permite lançar itens do cliente enquanto ele aguarda. Ao destinar a
+        senha para uma mesa, esta comanda (com os itens) passa para a mesa.
+        """
+        if ticket.status in CLOSED_TICKET_STATUSES:
+            raise ValidationError('Esta senha já foi finalizada ou cancelada.')
+        existing = QueueService.active_order(ticket)
+        if existing:
+            return existing
+
+        from apps.orders.services import OrderService
+        return OrderService.open_order(
+            opened_by=opened_by,
+            queue_ticket=ticket,
+            customer_name=ticket.customer_name,
+            people_count=ticket.people_count,
+        )
+
+    @staticmethod
     @transaction.atomic
     def assign_table(ticket, table, *, seated_by, open_order=True):
-        """Destina a senha a uma mesa. Opcionalmente já abre a comanda.
+        """Destina a senha a uma mesa.
 
+        - Se a senha já tem comanda aberta (pedidos feitos na espera), essa
+          comanda é vinculada à mesa — os itens vão junto.
+        - Senão, e ``open_order=True``, abre uma comanda nova na mesa.
         Retorna (ticket, order|None). Só ADM/GERENTE/RECEPÇÃO chamam isto (view).
         """
         if ticket.status in CLOSED_TICKET_STATUSES:
             raise ValidationError('Esta senha já foi finalizada ou cancelada.')
-        if table.status == TableStatus.OCUPADA and open_order:
+
+        from apps.orders.services import OrderService
+        existing = QueueService.active_order(ticket)
+
+        if existing is None and table.status == TableStatus.OCUPADA and open_order:
             raise ValidationError({'table': f'Mesa {table.number} já está ocupada.'})
 
         ticket.table = table
@@ -70,15 +104,13 @@ class QueueService:
         ticket.save(update_fields=['table', 'status', 'called_at', 'called_by'])
 
         order = None
-        if open_order:
-            from apps.orders.services import OrderService
+        if existing is not None:
+            order = OrderService.attach_table(existing, table)
+        elif open_order:
             order = OrderService.open_order(
-                table=table, opened_by=seated_by,
-                customer_name=ticket.customer_name,
-                people_count=ticket.people_count,
+                table=table, opened_by=seated_by, queue_ticket=ticket,
+                customer_name=ticket.customer_name, people_count=ticket.people_count,
             )
-            order.queue_ticket = ticket
-            order.save(update_fields=['queue_ticket'])
         elif table.status == TableStatus.LIVRE:
             table.status = TableStatus.RESERVADA
             table.save(update_fields=['status', 'updated_at'])

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, RefreshCw, Volume2, UtensilsCrossed, ExternalLink } from 'lucide-react'
+import { Plus, RefreshCw, Volume2, UtensilsCrossed, ExternalLink, BookOpen } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { queueAPI, tablesAPI } from '../../services/api'
@@ -13,6 +13,7 @@ export default function QueuePage() {
   const navigate = useNavigate()
   const { hasRole } = useAuth()
   const canSeat = hasRole('RECEPCAO', 'ADM_MAXIMO', 'GERENTE')
+  const canOrder = hasRole('GARCOM', 'RECEPCAO', 'ADM_MAXIMO', 'GERENTE')
 
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -66,6 +67,16 @@ export default function QueuePage() {
       const r = await tablesAPI.list({ status: 'LIVRE', page_size: 100 })
       setFreeTables(r.data.results || r.data)
     } catch { setFreeTables([]) }
+  }
+
+  const startTicketOrder = async (ticket) => {
+    try {
+      const r = await queueAPI.openOrder(ticket.id)
+      toast.success(`Comanda da senha ${ticket.code} aberta`)
+      navigate(`/orders/${r.data.id}`)
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erro ao abrir a comanda da senha.')
+    }
   }
 
   const confirmSeat = async () => {
@@ -174,11 +185,17 @@ export default function QueuePage() {
                     {new Date(t.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </td>
                   <td className="p-4">
-                    <div className="flex items-center gap-3 justify-end">
+                    <div className="flex items-center gap-3 justify-end flex-wrap">
                       {t.active_order_id && (
                         <button onClick={() => navigate(`/orders/${t.active_order_id}`)}
                           className="text-xs text-brand-gold hover:underline inline-flex items-center gap-1">
                           <ExternalLink size={12} /> comanda
+                        </button>
+                      )}
+                      {canOrder && !t.active_order_id && ['AGUARDANDO', 'CHAMADO'].includes(t.status) && (
+                        <button onClick={() => startTicketOrder(t)}
+                          className="text-xs text-brand-white bg-brand-border hover:bg-brand-dark px-2 py-1 rounded inline-flex items-center gap-1">
+                          <BookOpen size={12} /> Lançar pedido
                         </button>
                       )}
                       {canSeat && ['AGUARDANDO', 'CHAMADO'].includes(t.status) && (
@@ -231,6 +248,11 @@ export default function QueuePage() {
             Cliente: <span className="text-brand-white">{seatTicket?.customer_name || 'Anônimo'}</span>
             {' · '}{seatTicket?.people_count} pessoa(s)
           </p>
+          {seatTicket?.active_order_id && (
+            <p className="text-brand-gold text-xs">
+              Esta senha já tem uma comanda aberta — os itens lançados na espera vão para a mesa escolhida.
+            </p>
+          )}
           <FormField label="Mesa livre">
             <select className="input" value={seatTableId} onChange={e => setSeatTableId(e.target.value)}>
               <option value="">Selecione…</option>

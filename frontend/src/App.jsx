@@ -29,7 +29,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={user?.role === 'ADM_MAXIMO' ? <DashboardPage /> : <Navigate to="/tables" replace />} />
         <Route path="tables" element={<TablesPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/:id" element={<OrderDetailPage />} />

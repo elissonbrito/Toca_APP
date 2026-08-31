@@ -67,6 +67,15 @@ class IsFloorStaff(BasePermission):
         ]
 
 
+class IsFloorStaffOrCaixa(BasePermission):
+    """Salão + caixa: fechar conta pode ser feito pelo garçom ou pelo caixa."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in [
+            UserRole.GARCOM, UserRole.RECEPCAO, UserRole.CAIXA,
+            UserRole.ADM_MAXIMO, UserRole.GERENTE,
+        ]
+
+
 class IsRecepcao(BasePermission):
     """Recepção access."""
     def has_permission(self, request, view):

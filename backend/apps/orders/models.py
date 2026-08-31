@@ -9,6 +9,7 @@ class OrderStatus(models.TextChoices):
     ABERTO = 'ABERTO', 'Aberto'
     PREPARANDO = 'PREPARANDO', 'Preparando'
     PRONTO = 'PRONTO', 'Pronto'
+    FECHAMENTO = 'FECHAMENTO', 'Conta fechada (aguardando caixa)'
     FINALIZADO = 'FINALIZADO', 'Finalizado'
     CANCELADO = 'CANCELADO', 'Cancelado'
 
@@ -28,11 +29,16 @@ class ItemStatus(models.TextChoices):
 
 
 class Order(models.Model):
-    """Comanda / Order model."""
+    """Comanda / Order model.
+
+    ``table`` pode ser nulo: uma comanda pode nascer vinculada a uma senha
+    (cliente pedindo enquanto espera) e só depois receber a mesa.
+    """
     table = models.ForeignKey(
         'tables.Table',
         on_delete=models.PROTECT,
         related_name='orders',
+        null=True, blank=True,
         verbose_name='Mesa'
     )
     opened_by = models.ForeignKey(
@@ -67,7 +73,11 @@ class Order(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f'Pedido #{self.id} - Mesa {self.table.number}'
+        if self.table_id:
+            return f'Pedido #{self.id} - Mesa {self.table.number}'
+        if self.queue_ticket_id:
+            return f'Pedido #{self.id} - Senha {self.queue_ticket.code}'
+        return f'Pedido #{self.id}'
 
     def recalculate_total(self):
         from django.db.models import Sum

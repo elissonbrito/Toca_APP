@@ -12,7 +12,7 @@ from apps.audit.services import AuditService
 
 
 class TableViewSet(viewsets.ModelViewSet):
-    queryset = Table.objects.all()
+    queryset = Table.objects.prefetch_related('orders').all()
     serializer_class = TableSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'seats']

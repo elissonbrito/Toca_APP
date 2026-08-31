@@ -24,7 +24,7 @@ class KitchenOrdersView(APIView):
         items = (
             OrderItem.objects
             .filter(sector=sector, status__in=[ItemStatus.PENDENTE, ItemStatus.PREPARANDO])
-            .select_related('order', 'order__table')
+            .select_related('order', 'order__table', 'order__queue_ticket')
             .order_by('created_at')
         )
         return Response(OrderItemSerializer(items, many=True).data)

@@ -7,6 +7,7 @@ from django.db import models
 class TableStatus(models.TextChoices):
     LIVRE = 'LIVRE', 'Livre'
     OCUPADA = 'OCUPADA', 'Ocupada'
+    CONTA = 'CONTA', 'Aguardando pagamento'
     RESERVADA = 'RESERVADA', 'Reservada'
     LIMPEZA = 'LIMPEZA', 'Em Limpeza'
 

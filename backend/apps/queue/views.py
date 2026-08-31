@@ -7,7 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from .models import QueueTicket, TicketStatus
 from .serializers import QueueTicketSerializer, QueueTicketCreateSerializer
 from .services import QueueService
-from apps.users.permissions import IsManager, IsRecepcao
+from apps.users.permissions import IsManager, IsRecepcao, IsFloorStaff
 from apps.audit.services import AuditService
 
 
@@ -31,6 +31,9 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         if self.action in ['update', 'partial_update', 'destroy']:
             return [IsManager()]
+        if self.action == 'open_order':
+            # lançar pedido pela senha: garçom/recepção/gerente/admin
+            return [IsFloorStaff()]
         # create, call_next, finalize, cancel, assign_table -> ADM/GERENTE/RECEPÇÃO
         return [IsRecepcao()]
 
@@ -83,6 +86,19 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
             details=f'Senha {ticket.code} cancelada', request=request,
         )
         return Response(QueueTicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'], url_path='open-order')
+    def open_order(self, request, pk=None):
+        """Abre a comanda da senha (sem mesa) para lançar o que o cliente pede na espera."""
+        from apps.orders.serializers import OrderSerializer
+
+        ticket = self.get_object()
+        order = QueueService.open_order_for_ticket(ticket, opened_by=request.user)
+        AuditService.log(
+            user=request.user, action='CREATE', entity='Order', entity_id=order.id,
+            details=f'Comanda #{order.id} aberta pela senha {ticket.code}', request=request,
+        )
+        return Response(OrderSerializer(order).data, status=201)
 
     @action(detail=True, methods=['post'], url_path='assign-table')
     def assign_table(self, request, pk=None):

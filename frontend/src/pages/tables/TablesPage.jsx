@@ -7,22 +7,16 @@ import { tablesAPI, ordersAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, EmptyState, PageHeader, FormField } from '../../components/ui/index.jsx'
 import { useAuth } from '../../context/AuthContext'
 
-const TABLE_STATUS = ['LIVRE', 'OCUPADA', 'RESERVADA', 'LIMPEZA']
-const STATUS_ACTIONS = {
-  LIVRE: { next: 'OCUPADA', label: 'Abrir Comanda', cls: 'btn-primary' },
-  OCUPADA: { next: 'LIMPEZA', label: 'Liberar → Limpeza', cls: 'btn-ghost' },
-  LIMPEZA: { next: 'LIVRE', label: 'Marcar como Livre', cls: 'btn-gold' },
-  RESERVADA: { next: 'OCUPADA', label: 'Check-in', cls: 'btn-primary' },
-}
+const TABLE_STATUS = ['LIVRE', 'OCUPADA', 'CONTA', 'RESERVADA', 'LIMPEZA']
 
-function TableCard({ table, onStatusChange, onSelect, isManager }) {
+function TableCard({ table, onStatusChange, onSelect, onOpenComanda, onCloseBill }) {
   const colors = {
     LIVRE: 'border-green-800/50 bg-green-950/20',
     OCUPADA: 'border-brand-red/50 bg-brand-red/10',
+    CONTA: 'border-purple-700/60 bg-purple-950/30',
     RESERVADA: 'border-blue-800/50 bg-blue-950/20',
     LIMPEZA: 'border-yellow-800/50 bg-yellow-950/20',
   }
-  const action = STATUS_ACTIONS[table.status]
 
   return (
     <div className={`card border-2 ${colors[table.status]} p-4 transition-all duration-200 hover:scale-[1.02]`}>
@@ -36,17 +30,41 @@ function TableCard({ table, onStatusChange, onSelect, isManager }) {
       {table.observation && (
         <p className="text-brand-muted text-xs mb-3 line-clamp-2">{table.observation}</p>
       )}
-      <div className="flex gap-2 mt-auto">
-        {table.status === 'LIVRE' ? (
-          <button className="btn-primary text-xs py-1.5 px-3 flex-1" onClick={() => onSelect(table)}>
+      {table.status === 'CONTA' && (
+        <p className="text-purple-300 text-xs mb-2">Conta fechada — aguardando o caixa.</p>
+      )}
+      <div className="flex flex-col gap-2 mt-auto">
+        {table.status === 'LIVRE' && (
+          <button className="btn-primary text-xs py-1.5 px-3" onClick={() => onSelect(table)}>
             Abrir Comanda
           </button>
-        ) : (
-          action && (
-            <button className={`${action.cls} text-xs py-1.5 px-3 flex-1`} onClick={() => onStatusChange(table, action.next)}>
-              {action.label}
-            </button>
-          )
+        )}
+
+        {table.active_order_id && (
+          <button className="btn-primary text-xs py-1.5 px-3" onClick={() => onOpenComanda(table.active_order_id)}>
+            {table.status === 'CONTA' ? 'Ver conta' : 'Ver / Lançar itens'}
+          </button>
+        )}
+
+        {table.status === 'OCUPADA' && table.active_order_id && (
+          <button className="btn-gold text-xs py-1.5 px-3" onClick={() => onCloseBill(table.active_order_id)}>
+            Fechar Conta
+          </button>
+        )}
+        {table.status === 'OCUPADA' && !table.active_order_id && (
+          <button className="btn-ghost text-xs py-1.5 px-3" onClick={() => onStatusChange(table, 'LIMPEZA')}>
+            Liberar → Limpeza
+          </button>
+        )}
+        {table.status === 'LIMPEZA' && (
+          <button className="btn-gold text-xs py-1.5 px-3" onClick={() => onStatusChange(table, 'LIVRE')}>
+            Marcar como Livre
+          </button>
+        )}
+        {table.status === 'RESERVADA' && !table.active_order_id && (
+          <button className="btn-primary text-xs py-1.5 px-3" onClick={() => onSelect(table)}>
+            Abrir Comanda (check-in)
+          </button>
         )}
       </div>
     </div>
@@ -80,6 +98,17 @@ export default function TablesPage() {
       toast.success(`Mesa ${table.number} → ${newStatus}`)
       load()
     } catch { toast.error('Erro ao atualizar status') }
+  }
+
+  const handleCloseBill = async (orderId) => {
+    if (!confirm('Fechar a conta desta mesa? Ela vai para o caixa.')) return
+    try {
+      await ordersAPI.closeBill(orderId)
+      toast.success('Conta fechada — enviada para o caixa.')
+      load()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.response?.data?.[0] || 'Erro ao fechar a conta.')
+    }
   }
 
   const handleCreateTable = async (data) => {
@@ -149,7 +178,8 @@ export default function TablesPage() {
               table={t}
               onStatusChange={handleStatusChange}
               onSelect={setShowOrder}
-              isManager={isManager}
+              onOpenComanda={(oid) => navigate(`/orders/${oid}`)}
+              onCloseBill={handleCloseBill}
             />
           ))}
         </div>

@@ -42,7 +42,7 @@ class CashRegisterTests(APITestCase):
                              {'order': order.id, 'amount': '50.00', 'payment_method': 'PIX'}, format='json')
         self.assertEqual(r.status_code, 400)
 
-    def test_payment_finalizes_order_and_cleans_table(self):
+    def test_payment_finalizes_order_frees_table_and_launches_invoice(self):
         self._open_register()
         order = self._order(80)
         r = self.client.post('/api/cash-register/payments/',
@@ -51,7 +51,52 @@ class CashRegisterTests(APITestCase):
         order.refresh_from_db()
         self.table.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.FINALIZADO)
-        self.assertEqual(self.table.status, TableStatus.LIMPEZA)
+        # baixa no caixa -> a mesa fica disponível (não vai para limpeza)
+        self.assertEqual(self.table.status, TableStatus.LIVRE)
+        # NFC-e lançada automaticamente junto com a baixa
+        self.assertIn('invoice', r.data)
+        from apps.fiscal.models import Invoice
+        self.assertTrue(Invoice.objects.filter(order=order).exists())
+
+    def test_close_bill_flow_and_pending_orders(self):
+        self._open_register()
+        order = self._order(40)
+        order.status = OrderStatus.ABERTO
+        order.save(update_fields=['status'])
+
+        # garçom fecha a conta -> vai para o caixa
+        self.client.force_authenticate(self.garcom)
+        r = self.client.post(f'/api/orders/{order.id}/close_bill/', {}, format='json')
+        self.assertEqual(r.data['status'], 'FECHAMENTO')
+        self.table.refresh_from_db()
+        self.assertEqual(self.table.status, TableStatus.CONTA)
+
+        # caixa vê a conta em evidência
+        self.client.force_authenticate(self.caixa)
+        pend = self.client.get('/api/cash-register/registers/pending-orders/')
+        self.assertEqual(pend.status_code, 200)
+        self.assertTrue(any(o['id'] == order.id for o in pend.data))
+
+    def test_only_caixa_removes_launched_item(self):
+        order = self._order()
+        item = order.items.first()
+        self.client.force_authenticate(self.garcom)
+        self.assertEqual(self.client.delete(f'/api/orders/{order.id}/items/{item.id}/').status_code, 403)
+        self.client.force_authenticate(self.caixa)
+        self.assertEqual(self.client.delete(f'/api/orders/{order.id}/items/{item.id}/').status_code, 200)
+
+    def test_only_caixa_cancels_bill(self):
+        order = self._order()
+        order.status = OrderStatus.ABERTO
+        order.save(update_fields=['status'])
+        self.client.force_authenticate(self.garcom)
+        self.assertEqual(
+            self.client.post(f'/api/orders/{order.id}/update_status/', {'status': 'CANCELADO'}, format='json').status_code,
+            403)
+        self.client.force_authenticate(self.caixa)
+        self.assertEqual(
+            self.client.post(f'/api/orders/{order.id}/update_status/', {'status': 'CANCELADO'}, format='json').status_code,
+            200)
 
     def test_cannot_pay_finalized_order(self):
         self._open_register()
