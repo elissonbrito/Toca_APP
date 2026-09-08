@@ -72,8 +72,11 @@ class PaymentService:
     @staticmethod
     @transaction.atomic
     def register_payment(*, order, amount, payment_method, received_by, observations=''):
-        """Dá baixa na conta: registra o pagamento, finaliza a comanda, libera a
-        mesa e dispara a NFC-e automaticamente. Retorna (payment, invoice|None).
+        """Dá baixa na conta: registra o pagamento, finaliza a comanda e dispara a
+        NFC-e automaticamente. Retorna (payment, invoice|None).
+
+        NÃO libera a mesa — quem controla o ciclo OCUPADA -> LIMPEZA -> LIVRE é o
+        garçom, à parte do pagamento.
         """
         register = CashRegisterService.current_open()
         if register is None:
@@ -91,8 +94,9 @@ class PaymentService:
             received_by=received_by,
             observations=observations,
         )
-        # Finaliza a comanda e LIBERA a mesa (baixa no caixa -> mesa disponível).
-        OrderService.change_status(order, OrderStatus.FINALIZADO, free_table=True)
+        # Finaliza a comanda. A mesa NÃO é liberada aqui — o garçom faz
+        # OCUPADA -> LIMPEZA -> LIVRE manualmente depois.
+        OrderService.change_status(order, OrderStatus.FINALIZADO, touch_table=False)
 
         # Lançamento fiscal automático (não bloqueia a baixa se algo falhar).
         invoice = None

@@ -114,6 +114,23 @@ class OrderItem(models.Model):
         default=ItemSector.COZINHA
     )
 
+    # Atribuição — quem lançou e (se for o caso) quem retirou o item da conta.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='launched_items',
+        null=True, blank=True,
+        verbose_name='Lançado por',
+    )
+    removed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='removed_items',
+        null=True, blank=True,
+        verbose_name='Retirado por',
+    )
+    removed_at = models.DateTimeField('Retirado em', null=True, blank=True)
+
     # Snapshot fiscal — congelado no momento da venda (imutável, base da NFC-e).
     fiscal_ncm = models.CharField('NCM', max_length=8, blank=True)
     fiscal_cest = models.CharField('CEST', max_length=7, blank=True)

@@ -1,24 +1,34 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, ChefHat, Search, BookOpen, Receipt, Undo2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ChefHat, Search, BookOpen, Receipt, Undo2, ArrowLeftRight, Move } from 'lucide-react'
 import { toast } from 'react-toastify'
-import { ordersAPI, menuAPI } from '../../services/api'
+import { ordersAPI, menuAPI, tablesAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, ConfirmDialog } from '../../components/ui/index.jsx'
 import { useAuth } from '../../context/AuthContext'
 
 const NO_ITEMS = ['FINALIZADO', 'CANCELADO', 'FECHAMENTO']
 const CAN_CLOSE_FROM = ['ABERTO', 'PREPARANDO', 'PRONTO']
+const CLOSED = ['FINALIZADO', 'CANCELADO']
 
 export default function OrderDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { hasRole } = useAuth()
   const isCaixa = hasRole('CAIXA', 'ADM_MAXIMO', 'GERENTE')
+  const isCaixaAdmin = hasRole('CAIXA', 'ADM_MAXIMO')
   const canCloseBill = hasRole('GARCOM', 'RECEPCAO', 'CAIXA', 'ADM_MAXIMO', 'GERENTE')
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showMenu, setShowMenu] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(null)
+
+  // troca de mesa / transferência de itens (caixa/adm)
+  const [showTransferTable, setShowTransferTable] = useState(false)
+  const [showTransferItems, setShowTransferItems] = useState(false)
+  const [freeTables, setFreeTables] = useState([])
+  const [openOrders, setOpenOrders] = useState([])
+  const [transferTarget, setTransferTarget] = useState('')
+  const [pickedItems, setPickedItems] = useState({})
 
   // cardápio
   const [menuItems, setMenuItems] = useState([])
@@ -77,6 +87,47 @@ export default function OrderDetailPage() {
   const reopenBill = async () => {
     try { await ordersAPI.reopenBill(id); toast.success('Conta reaberta.'); load() }
     catch (e) { toast.error(e.response?.data?.detail || 'Erro ao reabrir a conta.') }
+  }
+
+  const openTransferTable = async () => {
+    try {
+      const r = await tablesAPI.list()
+      const list = (r.data.results || r.data).filter(t => t.status === 'LIVRE')
+      setFreeTables(list)
+      setShowTransferTable(true)
+    } catch { toast.error('Erro ao carregar mesas livres') }
+  }
+
+  const doTransferTable = async (tableId) => {
+    try {
+      await ordersAPI.transferTable(id, tableId)
+      toast.success('Mesa trocada.')
+      setShowTransferTable(false); load()
+    } catch (e) { toast.error(e.response?.data?.table || e.response?.data?.detail || 'Erro ao trocar de mesa.') }
+  }
+
+  const openTransferItems = async () => {
+    try {
+      const r = await ordersAPI.list({ page_size: 200 })
+      const list = (r.data.results || r.data).filter(
+        o => o.id !== Number(id) && !CLOSED.includes(o.status) && o.status !== 'FECHAMENTO'
+      )
+      setOpenOrders(list)
+      setTransferTarget('')
+      setPickedItems({})
+      setShowTransferItems(true)
+    } catch { toast.error('Erro ao carregar comandas') }
+  }
+
+  const doTransferItems = async () => {
+    const items = Object.entries(pickedItems).filter(([, v]) => v).map(([k]) => Number(k))
+    if (!transferTarget) { toast.error('Escolha a comanda de destino.'); return }
+    if (!items.length) { toast.error('Selecione ao menos um item.'); return }
+    try {
+      await ordersAPI.transferItems(id, Number(transferTarget), items)
+      toast.success('Itens transferidos.')
+      setShowTransferItems(false); load()
+    } catch (e) { toast.error(e.response?.data?.detail || 'Erro ao transferir itens.') }
   }
 
   const grouped = useMemo(() => {
@@ -147,6 +198,16 @@ export default function OrderDetailPage() {
           <button className="btn-gold flex items-center gap-2" onClick={closeBill}>
             <Receipt size={16} /> Fechar Conta
           </button>
+        )}
+        {isCaixaAdmin && !CLOSED.includes(order.status) && (
+          <>
+            <button className="btn-ghost flex items-center gap-2" onClick={openTransferTable}>
+              <ArrowLeftRight size={16} /> Trocar mesa
+            </button>
+            <button className="btn-ghost flex items-center gap-2" onClick={openTransferItems}>
+              <Move size={16} /> Transferir itens
+            </button>
+          </>
         )}
         {isCaixa && !['FINALIZADO', 'CANCELADO'].includes(order.status) && (
           <button className="btn-danger" onClick={() => setConfirmCancel(true)}>
@@ -261,6 +322,63 @@ export default function OrderDetailPage() {
 
           <div className="flex justify-end pt-2 border-t border-brand-border">
             <button className="btn-ghost" onClick={() => setShowMenu(false)}>Fechar</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Trocar mesa */}
+      <Modal open={showTransferTable} onClose={() => setShowTransferTable(false)} title="Trocar a mesa do cliente">
+        <div className="space-y-3">
+          <p className="text-brand-muted text-sm">
+            A comanda inteira passa para a mesa escolhida. A mesa atual vai para limpeza.
+          </p>
+          {freeTables.length === 0 ? (
+            <p className="text-brand-muted text-sm">Nenhuma mesa livre no momento.</p>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[50vh] overflow-y-auto">
+              {freeTables.map(t => (
+                <button key={t.id} className="btn-ghost py-2" onClick={() => doTransferTable(t.id)}>
+                  Mesa {t.number}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2 border-t border-brand-border">
+            <button className="btn-ghost" onClick={() => setShowTransferTable(false)}>Fechar</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Transferir itens */}
+      <Modal open={showTransferItems} onClose={() => setShowTransferItems(false)} title="Transferir itens para outra comanda" size="lg">
+        <div className="space-y-4">
+          <div>
+            <label className="text-brand-muted text-xs">Comanda de destino</label>
+            <select className="input mt-1" value={transferTarget} onChange={e => setTransferTarget(e.target.value)}>
+              <option value="">Selecione…</option>
+              {openOrders.map(o => (
+                <option key={o.id} value={o.id}>
+                  #{o.id} — {o.table ? `Mesa ${o.table.number}` : o.queue_ticket_code ? `Senha ${o.queue_ticket_code}` : 'sem mesa'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="max-h-[45vh] overflow-y-auto divide-y divide-brand-border border border-brand-border rounded-lg">
+            {(order.items || []).filter(it => it.status !== 'CANCELADO').map(it => (
+              <label key={it.id} className="flex items-center gap-3 p-3 hover:bg-brand-dark/50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!pickedItems[it.id]}
+                  onChange={e => setPickedItems(p => ({ ...p, [it.id]: e.target.checked }))}
+                />
+                <span className="flex-1 text-brand-white text-sm">{it.quantity}x {it.product_name}</span>
+                <span className="text-brand-muted text-xs">R$ {Number(it.total_price).toFixed(2)}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t border-brand-border">
+            <button className="btn-ghost" onClick={() => setShowTransferItems(false)}>Cancelar</button>
+            <button className="btn-primary" onClick={doTransferItems}>Transferir</button>
           </div>
         </div>
       </Modal>

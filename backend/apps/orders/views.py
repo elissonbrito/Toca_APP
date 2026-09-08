@@ -12,7 +12,9 @@ from .serializers import (
     OrderItemSerializer, OrderItemCreateSerializer,
 )
 from .services import OrderService
-from apps.users.permissions import IsManager, IsFloorStaff, IsFloorStaffOrCaixa, IsCaixa
+from apps.users.permissions import (
+    IsManager, IsFloorStaff, IsFloorStaffOrCaixa, IsCaixa, IsCaixaOrAdmin,
+)
 from apps.audit.services import AuditService
 
 CAIXA_ROLES = {'CAIXA', 'ADM_MAXIMO', 'GERENTE'}
@@ -45,6 +47,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             return [IsFloorStaffOrCaixa()]
         if self.action == 'reopen_bill':
             return [IsCaixa()]
+        if self.action in ['transfer_table', 'transfer_items']:
+            return [IsCaixaOrAdmin()]          # troca de mesa / itens -> caixa ou adm
         # list, retrieve, update_status, add_item
         return [IsAuthenticated()]
 
@@ -80,7 +84,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         serializer = OrderItemCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        item = OrderService.add_item(order, **serializer.validated_data)
+        item = OrderService.add_item(order, created_by=request.user, **serializer.validated_data)
         order.refresh_from_db()
         AuditService.log(
             user=request.user, action='CREATE', entity='OrderItem', entity_id=item.id,
@@ -95,13 +99,45 @@ class OrderViewSet(viewsets.ModelViewSet):
         item = order.items.filter(pk=item_id).first()
         if item is None:
             return Response({'detail': 'Item não encontrado.'}, status=404)
-        OrderService.cancel_item(order, item)
+        OrderService.cancel_item(order, item, removed_by=request.user)
         AuditService.log(
             user=request.user, action='UPDATE', entity='OrderItem', entity_id=item.id,
-            details=f'Caixa cancelou o item {item.product_name} no Pedido #{order.id}',
+            details=f'Caixa retirou o item {item.product_name} no Pedido #{order.id}',
             request=request,
         )
         return Response({'detail': 'Item cancelado.'})
+
+    # --- troca de mesa / transferência de itens (caixa ou adm) ---------
+    @action(detail=True, methods=['post'], url_path='transfer-table')
+    def transfer_table(self, request, pk=None):
+        order = self.get_object()
+        from apps.tables.models import Table
+        new_table = Table.objects.filter(pk=request.data.get('table')).first()
+        if new_table is None:
+            return Response({'table': 'Mesa não encontrada.'}, status=400)
+        order, old_table = OrderService.transfer_table(order, new_table)
+        AuditService.log(
+            user=request.user, action='UPDATE', entity='Order', entity_id=order.id,
+            details=(f'Pedido #{order.id} transferido da Mesa '
+                     f'{old_table.number if old_table else "-"} para a Mesa {new_table.number}'),
+            request=request,
+        )
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], url_path='transfer-items')
+    def transfer_items(self, request, pk=None):
+        source = self.get_object()
+        target = Order.objects.filter(pk=request.data.get('target_order')).first()
+        if target is None:
+            return Response({'target_order': 'Comanda de destino não encontrada.'}, status=400)
+        items = OrderService.transfer_items(source, target, request.data.get('items'))
+        AuditService.log(
+            user=request.user, action='UPDATE', entity='Order', entity_id=source.id,
+            details=(f'{len(items)} item(ns) transferido(s) do Pedido #{source.id} '
+                     f'para o Pedido #{target.id}'),
+            request=request,
+        )
+        return Response(OrderSerializer(target).data)
 
     # --- conta / status ------------------------------------------------
     @action(detail=True, methods=['post'])

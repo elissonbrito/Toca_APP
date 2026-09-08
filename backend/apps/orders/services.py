@@ -66,7 +66,7 @@ class OrderService:
     @staticmethod
     @transaction.atomic
     def add_item(order, *, menu_item=None, product_name=None, quantity=1,
-                 unit_price=None, sector=None, observations=''):
+                 unit_price=None, sector=None, observations='', created_by=None):
         """Adiciona um item à comanda e recalcula o total.
 
         Se ``menu_item`` for informado, nome/preço/setor saem do cardápio (salvo
@@ -98,6 +98,7 @@ class OrderService:
             unit_price=unit_price,
             sector=sector or 'COZINHA',
             observations=observations,
+            created_by=created_by,
             **fiscal_snapshot,
         )
         order.recalculate_total()
@@ -106,18 +107,77 @@ class OrderService:
         if order.status in (OrderStatus.PRONTO, OrderStatus.ABERTO):
             order.status = OrderStatus.PREPARANDO
             order.save(update_fields=['status'])
+        # Impressão automática (bar/parrilla) — nunca derruba o lançamento.
+        try:
+            from apps.printing.services import PrintingService
+            PrintingService.enqueue_item(order, item)
+        except Exception:
+            pass
         return item
 
     @staticmethod
     @transaction.atomic
-    def cancel_item(order, item):
-        """Cancela (soft) um item e recalcula o total."""
+    def cancel_item(order, item, *, removed_by=None):
+        """Cancela (soft) um item e recalcula o total. Registra quem retirou."""
         if item.status == ItemStatus.CANCELADO:
             return item
         item.status = ItemStatus.CANCELADO
-        item.save(update_fields=['status', 'updated_at'])
+        item.removed_by = removed_by
+        item.removed_at = timezone.now()
+        item.save(update_fields=['status', 'removed_by', 'removed_at', 'updated_at'])
         order.recalculate_total()
         return item
+
+    @staticmethod
+    @transaction.atomic
+    def transfer_table(order, new_table):
+        """Move a comanda inteira para outra mesa (troca de mesa do cliente).
+
+        A mesa antiga vai para LIMPEZA; a nova fica OCUPADA. Restrito a caixa/adm
+        na camada de permissão da view.
+        """
+        if order.status in CLOSED_STATUSES:
+            raise ValidationError('Comanda finalizada ou cancelada não troca de mesa.')
+        if (new_table.orders.exclude(status__in=CLOSED_STATUSES)
+                .exclude(pk=order.pk).exists()):
+            raise ValidationError({'table': f'Mesa {new_table.number} já tem uma comanda aberta.'})
+
+        old_table = order.table
+        if old_table and old_table.pk == new_table.pk:
+            return order, old_table
+
+        order.table = new_table
+        order.save(update_fields=['table'])
+        if new_table.status != TableStatus.OCUPADA:
+            new_table.status = TableStatus.OCUPADA
+            new_table.save(update_fields=['status', 'updated_at'])
+        if old_table:
+            old_table.status = TableStatus.LIMPEZA
+            old_table.save(update_fields=['status', 'updated_at'])
+        return order, old_table
+
+    @staticmethod
+    @transaction.atomic
+    def transfer_items(source_order, target_order, item_ids):
+        """Transfere itens selecionados de uma comanda para outra e recalcula ambas."""
+        if source_order.pk == target_order.pk:
+            raise ValidationError('Comanda de origem e destino são a mesma.')
+        if target_order.status in LOCKED_FOR_ITEMS:
+            raise ValidationError('A comanda de destino está fechada — não aceita itens.')
+
+        items = list(
+            source_order.items.filter(pk__in=item_ids or [])
+            .exclude(status=ItemStatus.CANCELADO)
+        )
+        if not items:
+            raise ValidationError('Selecione ao menos um item válido para transferir.')
+
+        for it in items:
+            it.order = target_order
+            it.save(update_fields=['order'])
+        source_order.recalculate_total()
+        target_order.recalculate_total()
+        return items
 
     ACTIVE_ITEM_STATUSES = {ItemStatus.PENDENTE, ItemStatus.PREPARANDO}
 
@@ -157,8 +217,9 @@ class OrderService:
     def close_bill(order):
         """"Fechar conta": manda a comanda para o caixa (status FECHAMENTO).
 
-        A mesa passa a "aguardando pagamento" (TableStatus.CONTA) e a conta fica
-        em evidência no caixa. Não aceita mais itens (salvo reabertura).
+        NÃO mexe na mesa: ela continua OCUPADA e o garçom controla o ciclo
+        OCUPADA -> LIMPEZA -> LIVRE manualmente, à parte da conta. A conta fica
+        em evidência no caixa e não aceita mais itens (salvo reabertura).
         """
         if order.status in CLOSED_STATUSES:
             raise ValidationError('Esta comanda já está finalizada ou cancelada.')
@@ -170,32 +231,30 @@ class OrderService:
         old_status = order.status
         order.status = OrderStatus.FECHAMENTO
         order.save(update_fields=['status'])
-        if order.table_id and order.table.status != TableStatus.CONTA:
-            order.table.status = TableStatus.CONTA
-            order.table.save(update_fields=['status', 'updated_at'])
         return old_status, order
 
     @staticmethod
     @transaction.atomic
     def reopen_bill(order):
-        """Reabre uma conta que foi fechada mas ainda não foi paga."""
+        """Reabre uma conta que foi fechada mas ainda não foi paga.
+
+        Não toca na mesa — o status da mesa é responsabilidade do garçom.
+        """
         if order.status != OrderStatus.FECHAMENTO:
             raise ValidationError('Só é possível reabrir uma conta que está em fechamento.')
         order.status = OrderStatus.PRONTO if order.items.exists() else OrderStatus.ABERTO
         order.save(update_fields=['status'])
-        if order.table_id:
-            order.table.status = TableStatus.OCUPADA
-            order.table.save(update_fields=['status', 'updated_at'])
         return order
 
     @staticmethod
     @transaction.atomic
-    def change_status(order, new_status, *, free_table=False):
+    def change_status(order, new_status, *, free_table=False, touch_table=True):
         """Aplica uma transição de status na comanda.
 
-        Retorna (status_anterior, order). Ao FINALIZAR: fecha a comanda e libera
-        a mesa (``free_table=True`` -> LIVRE, caso do pagamento no caixa; senão
-        -> LIMPEZA). Ao CANCELAR: libera a mesa (LIVRE).
+        Retorna (status_anterior, order). Ao FINALIZAR/CANCELAR marca ``closed_at``.
+        Efeito na mesa (só quando ``touch_table=True``): CANCELADO ou
+        ``free_table=True`` -> LIVRE; caso contrário -> LIMPEZA. Com
+        ``touch_table=False`` a mesa não é alterada (o garçom controla o ciclo).
         """
         if new_status not in OrderStatus.values:
             raise ValidationError({'status': 'Status inválido.'})
@@ -218,7 +277,7 @@ class OrderService:
         if new_status in (OrderStatus.FINALIZADO, OrderStatus.CANCELADO):
             order.closed_at = timezone.now()
             update_fields.append('closed_at')
-            if order.table_id:
+            if touch_table and order.table_id:
                 if new_status == OrderStatus.CANCELADO or free_table:
                     order.table.status = TableStatus.LIVRE
                 else:

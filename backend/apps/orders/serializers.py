@@ -9,6 +9,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
     sector_display = serializers.CharField(source='get_sector_display', read_only=True)
     order_id = serializers.IntegerField(source='order.id', read_only=True)
     order_ref = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True, default=None)
+    removed_by_name = serializers.CharField(source='removed_by.name', read_only=True, default=None)
 
     class Meta:
         model = OrderItem
@@ -16,6 +18,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'id', 'menu_item', 'product_name', 'quantity', 'unit_price', 'total_price',
             'sector', 'sector_display', 'status', 'status_display',
             'observations', 'created_at', 'updated_at', 'order_id', 'order_ref',
+            'created_by', 'created_by_name', 'removed_by', 'removed_by_name', 'removed_at',
             'fiscal_ncm', 'fiscal_cest', 'fiscal_cfop', 'fiscal_csosn',
             'fiscal_origem', 'fiscal_unit',
         ]

@@ -69,6 +69,7 @@ export const tablesAPI = {
   get: (id) => api.get(`/tables/${id}/`),
   create: (data) => api.post('/tables/', data),
   update: (id, data) => api.patch(`/tables/${id}/`, data),
+  setStatus: (id, status) => api.post(`/tables/${id}/status/`, { status }),
   delete: (id) => api.delete(`/tables/${id}/`),
 }
 
@@ -83,6 +84,9 @@ export const ordersAPI = {
   closeBill: (orderId) => api.post(`/orders/${orderId}/close_bill/`),
   reopenBill: (orderId) => api.post(`/orders/${orderId}/reopen_bill/`),
   cancelBill: (orderId) => api.delete(`/orders/${orderId}/`),
+  transferTable: (orderId, tableId) => api.post(`/orders/${orderId}/transfer-table/`, { table: tableId }),
+  transferItems: (orderId, targetOrderId, items) =>
+    api.post(`/orders/${orderId}/transfer-items/`, { target_order: targetOrderId, items }),
 }
 
 // ─── Kitchen ───────────────────────────────────────────
@@ -150,6 +154,28 @@ export const dashboardAPI = {
 // ─── Audit ─────────────────────────────────────────────
 export const auditAPI = {
   list: (params) => api.get('/audit/', { params }),
+}
+
+// ─── Impressão ─────────────────────────────────────────
+export const printingAPI = {
+  listPrinters: () => api.get('/printing/printers/'),
+  createPrinter: (data) => api.post('/printing/printers/', data),
+  updatePrinter: (id, data) => api.patch(`/printing/printers/${id}/`, data),
+  deletePrinter: (id) => api.delete(`/printing/printers/${id}/`),
+  getSettings: () => api.get('/printing/settings/'),
+  saveSettings: (data) => api.put('/printing/settings/', data),
+  pendingJobs: () => api.get('/printing/jobs/pending/'),
+  listJobs: (params) => api.get('/printing/jobs/', { params }),
+  markPrinted: (id) => api.post(`/printing/jobs/${id}/mark-printed/`),
+  markError: (id, message) => api.post(`/printing/jobs/${id}/mark-error/`, { message }),
+  reprint: (id) => api.post(`/printing/jobs/${id}/reprint/`),
+}
+
+// ─── Relatórios ────────────────────────────────────────
+export const reportsAPI = {
+  salesByWaiter: (params) => api.get('/reports/sales-by-waiter/', { params }),
+  waiterDetail: (params) => api.get('/reports/waiter-detail/', { params }),
+  itemRanking: (params) => api.get('/reports/item-ranking/', { params }),
 }
 
 export default api

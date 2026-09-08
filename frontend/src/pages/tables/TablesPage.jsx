@@ -17,6 +17,9 @@ function TableCard({ table, onStatusChange, onSelect, onOpenComanda, onCloseBill
     RESERVADA: 'border-blue-800/50 bg-blue-950/20',
     LIMPEZA: 'border-yellow-800/50 bg-yellow-950/20',
   }
+  // Conta fechada e à espera de baixa no caixa. A mesa continua OCUPADA:
+  // o garçom decide quando ela vai para limpeza / livre.
+  const billAtCashier = table.active_order_status === 'FECHAMENTO' || table.status === 'CONTA'
 
   return (
     <div className={`card border-2 ${colors[table.status]} p-4 transition-all duration-200 hover:scale-[1.02]`}>
@@ -30,8 +33,8 @@ function TableCard({ table, onStatusChange, onSelect, onOpenComanda, onCloseBill
       {table.observation && (
         <p className="text-brand-muted text-xs mb-3 line-clamp-2">{table.observation}</p>
       )}
-      {table.status === 'CONTA' && (
-        <p className="text-purple-300 text-xs mb-2">Conta fechada — aguardando o caixa.</p>
+      {billAtCashier && (
+        <p className="text-amber-300 text-xs mb-2">Conta no caixa — aguardando baixa. Atualize o status da mesa quando os clientes saírem.</p>
       )}
       <div className="flex flex-col gap-2 mt-auto">
         {table.status === 'LIVRE' && (
@@ -42,19 +45,26 @@ function TableCard({ table, onStatusChange, onSelect, onOpenComanda, onCloseBill
 
         {table.active_order_id && (
           <button className="btn-primary text-xs py-1.5 px-3" onClick={() => onOpenComanda(table.active_order_id)}>
-            {table.status === 'CONTA' ? 'Ver conta' : 'Ver / Lançar itens'}
+            {billAtCashier ? 'Ver conta' : 'Ver / Lançar itens'}
           </button>
         )}
 
-        {table.status === 'OCUPADA' && table.active_order_id && (
+        {table.status === 'OCUPADA' && table.active_order_id && !billAtCashier && (
           <button className="btn-gold text-xs py-1.5 px-3" onClick={() => onCloseBill(table.active_order_id)}>
             Fechar Conta
           </button>
         )}
-        {table.status === 'OCUPADA' && !table.active_order_id && (
-          <button className="btn-ghost text-xs py-1.5 px-3" onClick={() => onStatusChange(table, 'LIMPEZA')}>
-            Liberar → Limpeza
-          </button>
+
+        {/* Ciclo manual da mesa (garçom): OCUPADA/CONTA -> LIMPEZA -> LIVRE */}
+        {(billAtCashier || (table.status === 'OCUPADA' && !table.active_order_id)) && (
+          <div className="flex gap-1">
+            <button className="btn-ghost text-[11px] py-1 px-2 flex-1" onClick={() => onStatusChange(table, 'LIMPEZA')}>
+              Aguardando limpeza
+            </button>
+            <button className="btn-gold text-[11px] py-1 px-2 flex-1" onClick={() => onStatusChange(table, 'LIVRE')}>
+              Mesa livre
+            </button>
+          </div>
         )}
         {table.status === 'LIMPEZA' && (
           <button className="btn-gold text-xs py-1.5 px-3" onClick={() => onStatusChange(table, 'LIVRE')}>
@@ -94,7 +104,7 @@ export default function TablesPage() {
 
   const handleStatusChange = async (table, newStatus) => {
     try {
-      await tablesAPI.update(table.id, { status: newStatus })
+      await tablesAPI.setStatus(table.id, newStatus)
       toast.success(`Mesa ${table.number} → ${newStatus}`)
       load()
     } catch { toast.error('Erro ao atualizar status') }

@@ -24,4 +24,6 @@ urlpatterns = [
     path('api/cash-register/', include('apps.cash_register.urls')),
     path('api/audit/', include('apps.audit.urls')),
     path('api/dashboard/', include('apps.dashboard.urls')),
+    path('api/printing/', include('apps.printing.urls')),
+    path('api/reports/', include('apps.reports.urls')),
 ]

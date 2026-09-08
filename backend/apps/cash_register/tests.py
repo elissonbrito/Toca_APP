@@ -42,8 +42,10 @@ class CashRegisterTests(APITestCase):
                              {'order': order.id, 'amount': '50.00', 'payment_method': 'PIX'}, format='json')
         self.assertEqual(r.status_code, 400)
 
-    def test_payment_finalizes_order_frees_table_and_launches_invoice(self):
+    def test_payment_finalizes_order_keeps_table_and_launches_invoice(self):
         self._open_register()
+        self.table.status = TableStatus.OCUPADA
+        self.table.save(update_fields=['status'])
         order = self._order(80)
         r = self.client.post('/api/cash-register/payments/',
                              {'order': order.id, 'amount': '80.00', 'payment_method': 'CREDITO'}, format='json')
@@ -51,8 +53,8 @@ class CashRegisterTests(APITestCase):
         order.refresh_from_db()
         self.table.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.FINALIZADO)
-        # baixa no caixa -> a mesa fica disponível (não vai para limpeza)
-        self.assertEqual(self.table.status, TableStatus.LIVRE)
+        # baixa no caixa NÃO mexe na mesa — o garçom controla o ciclo depois
+        self.assertEqual(self.table.status, TableStatus.OCUPADA)
         # NFC-e lançada automaticamente junto com a baixa
         self.assertIn('invoice', r.data)
         from apps.fiscal.models import Invoice
@@ -60,16 +62,18 @@ class CashRegisterTests(APITestCase):
 
     def test_close_bill_flow_and_pending_orders(self):
         self._open_register()
+        self.table.status = TableStatus.OCUPADA
+        self.table.save(update_fields=['status'])
         order = self._order(40)
         order.status = OrderStatus.ABERTO
         order.save(update_fields=['status'])
 
-        # garçom fecha a conta -> vai para o caixa
+        # garçom fecha a conta -> vai para o caixa, mesa segue OCUPADA
         self.client.force_authenticate(self.garcom)
         r = self.client.post(f'/api/orders/{order.id}/close_bill/', {}, format='json')
         self.assertEqual(r.data['status'], 'FECHAMENTO')
         self.table.refresh_from_db()
-        self.assertEqual(self.table.status, TableStatus.CONTA)
+        self.assertEqual(self.table.status, TableStatus.OCUPADA)
 
         # caixa vê a conta em evidência
         self.client.force_authenticate(self.caixa)

@@ -76,6 +76,18 @@ class IsFloorStaffOrCaixa(BasePermission):
         ]
 
 
+class IsCaixaOrAdmin(BasePermission):
+    """Somente Caixa e Administrador Máximo — troca de mesa e transferência de itens.
+
+    Não inclui a gerência de propósito: é uma ação sensível (mexe na conta do
+    cliente) reservada a quem opera o caixa e ao ADM.
+    """
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in [
+            UserRole.CAIXA, UserRole.ADM_MAXIMO,
+        ]
+
+
 class IsRecepcao(BasePermission):
     """Recepção access."""
     def has_permission(self, request, view):

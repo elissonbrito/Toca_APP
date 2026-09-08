@@ -15,6 +15,9 @@ import MenuPage from './pages/menu/MenuPage'
 import FiscalConferencePage from './pages/menu/FiscalConferencePage'
 import UsersPage from './pages/users/UsersPage'
 import AuditPage from './pages/users/AuditPage'
+import ReportsPage from './pages/reports/ReportsPage'
+import PrintStationPage from './pages/printing/PrintStationPage'
+import PrinterSettingsPage from './pages/printing/PrinterSettingsPage'
 
 function PrivateRoute({ children, roles }) {
   const { user } = useAuth()
@@ -37,6 +40,9 @@ function AppRoutes() {
         <Route path="parrilla" element={<PrivateRoute roles={['PARRILLA','ADM_MAXIMO','GERENTE']}><ParrillaPage /></PrivateRoute>} />
         <Route path="queue" element={<QueuePage />} />
         <Route path="cash" element={<PrivateRoute roles={['CAIXA','ADM_MAXIMO','GERENTE']}><CashPage /></PrivateRoute>} />
+        <Route path="print-station" element={<PrivateRoute roles={['ADM_MAXIMO','GERENTE','CAIXA','COZINHA','PARRILLA']}><PrintStationPage /></PrivateRoute>} />
+        <Route path="printers" element={<PrivateRoute roles={['ADM_MAXIMO','GERENTE']}><PrinterSettingsPage /></PrivateRoute>} />
+        <Route path="reports" element={<PrivateRoute roles={['ADM_MAXIMO','GERENTE']}><ReportsPage /></PrivateRoute>} />
         <Route path="menu" element={<MenuPage />} />
         <Route path="fiscal" element={<PrivateRoute roles={['ADM_MAXIMO','GERENTE']}><FiscalConferencePage /></PrivateRoute>} />
         <Route path="users" element={<PrivateRoute roles={['ADM_MAXIMO','GERENTE']}><UsersPage /></PrivateRoute>} />
