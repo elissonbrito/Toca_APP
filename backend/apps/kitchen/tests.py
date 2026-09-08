@@ -27,13 +27,22 @@ class KitchenTests(APITestCase):
         self.client.force_authenticate(self.garcom)
         self.assertEqual(self.client.get('/api/kitchen/orders/?sector=COZINHA').status_code, 403)
 
-    def test_queue_filtered_by_sector(self):
+    def test_cozinha_panel_is_master_board(self):
+        # O painel da cozinha mostra COZINHA + PARRILLA (pratos "Na Brasa"
+        # imprimem na parrilla mas aparecem no painel da cozinha).
         self._order_with_items()
         self.client.force_authenticate(self.cozinha)
         r = self.client.get('/api/kitchen/orders/?sector=COZINHA')
         self.assertEqual(r.status_code, 200)
+        self.assertEqual({i['sector'] for i in r.data}, {ItemSector.COZINHA, ItemSector.PARRILLA})
+
+    def test_parrilla_panel_only_parrilla(self):
+        self._order_with_items()
+        self.client.force_authenticate(self.parrilla)
+        r = self.client.get('/api/kitchen/orders/?sector=PARRILLA')
+        self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data), 1)
-        self.assertEqual(r.data[0]['sector'], ItemSector.COZINHA)
+        self.assertEqual(r.data[0]['sector'], ItemSector.PARRILLA)
 
     def test_invalid_sector_rejected(self):
         self.client.force_authenticate(self.cozinha)

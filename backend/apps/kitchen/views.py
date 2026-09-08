@@ -21,9 +21,15 @@ class KitchenOrdersView(APIView):
         sector = request.query_params.get('sector', ItemSector.COZINHA)
         if sector not in PREP_SECTORS:
             return Response({'detail': 'Setor inválido.'}, status=400)
+        # O painel da cozinha é o quadro-mestre: além dos itens de COZINHA, mostra
+        # os pratos da parrilla (regra do cardápio: "Na Brasa" -> parrilla + cozinha).
+        if sector == ItemSector.COZINHA:
+            sector_filter = {'sector__in': [ItemSector.COZINHA, ItemSector.PARRILLA]}
+        else:
+            sector_filter = {'sector': sector}
         items = (
             OrderItem.objects
-            .filter(sector=sector, status__in=[ItemStatus.PENDENTE, ItemStatus.PREPARANDO])
+            .filter(status__in=[ItemStatus.PENDENTE, ItemStatus.PREPARANDO], **sector_filter)
             .select_related('order', 'order__table', 'order__queue_ticket')
             .order_by('created_at')
         )
