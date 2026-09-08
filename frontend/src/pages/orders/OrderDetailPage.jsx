@@ -147,10 +147,13 @@ export default function OrderDetailPage() {
   const canAddItems = !NO_ITEMS.includes(order.status)
   const canRemoveItem = isCaixa && !['FINALIZADO', 'CANCELADO'].includes(order.status)
 
+  // "Voltar": comanda de mesa -> tela de Mesas; comanda de senha -> Fila; senão Pedidos.
+  const goBack = () => navigate(order.table ? '/tables' : order.queue_ticket_code ? '/queue' : '/orders')
+
   return (
     <div className="animate-fade-in space-y-6 max-w-3xl">
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/orders')} className="text-brand-muted hover:text-brand-white transition-colors">
+        <button onClick={goBack} className="text-brand-muted hover:text-brand-white transition-colors">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
