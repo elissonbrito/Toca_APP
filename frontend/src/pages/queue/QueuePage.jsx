@@ -1,13 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, RefreshCw, Volume2, UtensilsCrossed, ExternalLink, BookOpen } from 'lucide-react'
+import { Plus, RefreshCw, Volume2, UtensilsCrossed, ExternalLink, BookOpen, Pencil, Star } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { queueAPI, tablesAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, PageHeader, FormField } from '../../components/ui/index.jsx'
 import { useAuth } from '../../context/AuthContext'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 
 const FILTERS = ['ALL', 'AGUARDANDO', 'CHAMADO', 'SENTADO', 'FINALIZADO', 'CANCELADO']
+
+// Lei 10.048/2000 (+ Lei 13.466/2017, que deu atendimento imediato a 80+).
+// Ajuste os rótulos se a lei municipal do estabelecimento pedir outra redação.
+const PRIORITY_OPTIONS = [
+  { value: 'NENHUMA', label: 'Sem prioridade' },
+  { value: 'IDOSO_80', label: 'Idoso(a) 80+ — atendimento imediato' },
+  { value: 'PCD', label: 'Pessoa com deficiência' },
+  { value: 'IDOSO_60', label: 'Idoso(a) 60–79 anos' },
+  { value: 'GESTANTE', label: 'Gestante' },
+  { value: 'LACTANTE', label: 'Lactante' },
+  { value: 'COLO', label: 'Pessoa com criança de colo' },
+  { value: 'OBESIDADE', label: 'Pessoa com obesidade' },
+]
 
 export default function QueuePage() {
   const navigate = useNavigate()
@@ -29,7 +43,13 @@ export default function QueuePage() {
   const [seatOpenOrder, setSeatOpenOrder] = useState(true)
   const [seating, setSeating] = useState(false)
 
-  const load = useCallback(() => {
+  // editar senha (nome / qtd pessoas)
+  const [editTicket, setEditTicket] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editPeople, setEditPeople] = useState(1)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback((opts = {}) => {
     const params = filter !== 'ALL' ? { status: filter } : {}
     Promise.all([queueAPI.list(params), queueAPI.publicDisplay()])
       .then(([listRes, displayRes]) => {
@@ -41,6 +61,8 @@ export default function QueuePage() {
   }, [filter])
 
   useEffect(() => { load() }, [load])
+  // Outra recepção gerou/chamou/editou uma senha -> aparece aqui sozinho.
+  useAutoRefresh(useCallback(() => load({ silent: true }), [load]), { interval: 5000 })
 
   const handleCreate = async (data) => {
     try {
@@ -95,6 +117,25 @@ export default function QueuePage() {
       toast.error(e.response?.data?.table || e.response?.data?.detail || 'Erro ao enviar para a mesa.')
     } finally {
       setSeating(false)
+    }
+  }
+
+  const openEdit = (ticket) => {
+    setEditTicket(ticket)
+    setEditName(ticket.customer_name || '')
+    setEditPeople(ticket.people_count)
+  }
+
+  const saveEdit = async () => {
+    setSaving(true)
+    try {
+      await queueAPI.edit(editTicket.id, { customer_name: editName, people_count: editPeople })
+      toast.success(`Senha ${editTicket.code} atualizada.`)
+      setEditTicket(null); load()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erro ao editar a senha.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -172,7 +213,14 @@ export default function QueuePage() {
             <tbody className="divide-y divide-brand-border">
               {tickets.map(t => (
                 <tr key={t.id} className="hover:bg-brand-dark/50 transition-colors">
-                  <td className="p-4 font-mono font-bold text-brand-gold">{t.code}</td>
+                  <td className="p-4">
+                    <div className="font-mono font-bold text-brand-gold">{t.code}</div>
+                    {t.is_priority && (
+                      <span className="mt-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-300 border border-amber-700">
+                        <Star size={9} /> {t.priority_category_display}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-4 text-brand-white">{t.customer_name || '—'}</td>
                   <td className="p-4 text-center text-brand-muted">{t.people_count}</td>
                   <td className="p-4 text-center"><StatusBadge status={t.status} label={t.status_display} /></td>
@@ -186,6 +234,12 @@ export default function QueuePage() {
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-3 justify-end flex-wrap">
+                      {canSeat && !['FINALIZADO', 'CANCELADO'].includes(t.status) && (
+                        <button onClick={() => openEdit(t)} title="Editar nome / qtd. pessoas"
+                          className="text-brand-muted hover:text-brand-white">
+                          <Pencil size={13} />
+                        </button>
+                      )}
                       {t.active_order_id && (
                         <button onClick={() => navigate(`/orders/${t.active_order_id}`)}
                           className="text-xs text-brand-gold hover:underline inline-flex items-center gap-1">
@@ -231,13 +285,43 @@ export default function QueuePage() {
             <input {...register('customer_name')} className="input" placeholder="Opcional" />
           </FormField>
           <FormField label="Número de Pessoas">
-            <input {...register('people_count', { min: 1 })} type="number" className="input" defaultValue={1} />
+            <input {...register('people_count', { min: 0 })} type="number" min="0" className="input" defaultValue={null} />
+          </FormField>
+          <FormField label="Prioridade (Lei 10.048/2000)">
+            <select {...register('priority_category')} className="input" defaultValue="NENHUMA">
+              {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
           </FormField>
           <div className="flex gap-3 justify-end pt-2">
             <button type="button" className="btn-ghost" onClick={() => setShowCreate(false)}>Cancelar</button>
             <button type="submit" className="btn-gold">Gerar Senha</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Editar senha */}
+      <Modal open={!!editTicket} onClose={() => setEditTicket(null)} title={`Editar senha ${editTicket?.code || ''}`}>
+        <div className="space-y-4">
+          <FormField label="Nome do Cliente">
+            <input className="input" value={editName} onChange={e => setEditName(e.target.value)}
+              placeholder="Qualquer nome ou observação" />
+          </FormField>
+          <FormField label="Número de Pessoas">
+            <div className="flex gap-2">
+              <input type="number" min="0" className="input flex-1" value={editPeople}
+                onChange={e => setEditPeople(Number(e.target.value))} />
+              <button type="button" className="btn-ghost text-sm" onClick={() => setEditPeople(0)}>
+                Zerar
+              </button>
+            </div>
+          </FormField>
+          <div className="flex gap-3 justify-end pt-2">
+            <button className="btn-ghost" onClick={() => setEditTicket(null)}>Cancelar</button>
+            <button className="btn-primary disabled:opacity-50" disabled={saving} onClick={saveEdit}>
+              {saving ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Enviar para mesa */}

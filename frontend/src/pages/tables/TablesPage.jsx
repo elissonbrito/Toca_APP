@@ -6,6 +6,7 @@ import { toast } from 'react-toastify'
 import { tablesAPI, ordersAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, EmptyState, PageHeader, FormField } from '../../components/ui/index.jsx'
 import { useAuth } from '../../context/AuthContext'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 
 const TABLE_STATUS = ['LIVRE', 'OCUPADA', 'CONTA', 'RESERVADA', 'LIMPEZA']
 
@@ -92,15 +93,17 @@ export default function TablesPage() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
   const { register: regOrder, handleSubmit: handleOrder, reset: resetOrder, formState: { errors: errOrder } } = useForm()
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((opts = {}) => {
+    if (!opts.silent) setLoading(true)
     tablesAPI.list()
       .then(r => setTables(r.data.results || r.data))
-      .catch(() => toast.error('Erro ao carregar mesas'))
+      .catch(() => { if (!opts.silent) toast.error('Erro ao carregar mesas') })
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
+  // Outro dispositivo abriu/fechou uma comanda ou mudou o status da mesa -> aparece aqui sozinho.
+  useAutoRefresh(useCallback(() => load({ silent: true }), [load]), { interval: 5000 })
 
   const handleStatusChange = async (table, newStatus) => {
     try {

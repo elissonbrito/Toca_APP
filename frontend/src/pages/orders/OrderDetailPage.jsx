@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 import { ordersAPI, menuAPI, tablesAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, ConfirmDialog } from '../../components/ui/index.jsx'
 import { useAuth } from '../../context/AuthContext'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 
 const NO_ITEMS = ['FINALIZADO', 'CANCELADO', 'FECHAMENTO']
 const CAN_CLOSE_FROM = ['ABERTO', 'PREPARANDO', 'PRONTO']
@@ -44,6 +45,8 @@ export default function OrderDetailPage() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+  // Cozinha marcou item pronto, caixa deu baixa etc. -> reflete aqui sozinho.
+  useAutoRefresh(load, { interval: 5000 })
 
   useEffect(() => {
     menuAPI.listItems({ is_active: true, page_size: 500, ordering: 'name' })

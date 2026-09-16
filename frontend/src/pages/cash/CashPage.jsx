@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { cashAPI, fiscalAPI, ordersAPI } from '../../services/api'
 import { Modal, StatusBadge, LoadingSpinner, PageHeader, FormField } from '../../components/ui/index.jsx'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 
 const METHODS = [
   { v: 'DINHEIRO', l: 'Dinheiro' }, { v: 'PIX', l: 'PIX' },
@@ -35,8 +36,8 @@ export default function CashPage() {
   const { register: reg, handleSubmit, reset, formState: { errors } } = useForm()
   const { register: regC, handleSubmit: handleC, reset: resetC } = useForm()
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((opts = {}) => {
+    if (!opts.silent) setLoading(true)
     Promise.all([
       cashAPI.getCurrent().catch(() => ({ data: null })),
       cashAPI.pendingOrders().catch(() => ({ data: [] })),
@@ -49,6 +50,8 @@ export default function CashPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  // Outro caixa/garçom fechou uma conta ou deu baixa -> atualiza sozinho aqui.
+  useAutoRefresh(useCallback(() => load({ silent: true }), [load]), { interval: 5000 })
 
   const openRegister = async (data) => {
     try {
@@ -283,7 +286,8 @@ export default function CashPage() {
               </FormField>
             </div>
             <p className="text-brand-muted text-xs">
-              Ao confirmar: a comanda é finalizada, a mesa fica livre e a NFC-e é lançada automaticamente.
+              Ao confirmar: a comanda é finalizada e a NFC-e é lançada automaticamente. A mesa continua
+              ocupada até o garçom atualizar o status (limpeza → livre).
             </p>
             <div className="flex gap-3 justify-end pt-2">
               <button className="btn-ghost" onClick={() => setBaixa(null)}>Cancelar</button>

@@ -2,36 +2,50 @@
 Queue services - regra de negócio da fila de senhas.
 """
 from django.db import transaction
+from django.db.models import Case, When, Value, IntegerField
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.tables.models import TableStatus
-from .models import QueueTicket, TicketStatus
+from .models import QueueTicket, TicketStatus, PRIORITY_RANK
 
 OPEN_STATUSES = {TicketStatus.AGUARDANDO, TicketStatus.CHAMADO}
 CLOSED_TICKET_STATUSES = {TicketStatus.FINALIZADO, TicketStatus.CANCELADO}
+
+# Anotação reutilizável: rank de prioridade (0 = 80+, 1 = demais prioridades,
+# 2 = sem prioridade), pra ordenar filas priorizando por lei e, dentro da
+# prioridade, por ordem de chegada.
+PRIORITY_RANK_CASE = Case(
+    *[When(priority_category=cat, then=Value(rank)) for cat, rank in PRIORITY_RANK.items()],
+    default=Value(2), output_field=IntegerField(),
+)
 
 
 class QueueService:
     @staticmethod
     @transaction.atomic
-    def issue_ticket(*, customer_name='', people_count=1):
+    def issue_ticket(*, customer_name='', people_count=1, priority_category='NENHUMA'):
         """Emite uma nova senha com código sequencial do dia."""
         return QueueTicket.objects.create(
             code=QueueTicket.generate_code(),
             customer_name=customer_name,
             people_count=people_count,
+            priority_category=priority_category,
         )
 
     @staticmethod
     @transaction.atomic
     def call_next(called_by):
-        """Chama a próxima senha aguardando. Lança ValidationError se a fila estiver vazia."""
+        """Chama a próxima senha aguardando, respeitando a ordem de prioridade
+        (80+ primeiro, demais prioridades em seguida, depois os demais — dentro
+        de cada grupo, por ordem de chegada). Lança ValidationError se vazia.
+        """
         ticket = (
             QueueTicket.objects
             .select_for_update()
             .filter(status=TicketStatus.AGUARDANDO)
-            .order_by('created_at')
+            .annotate(_prio=PRIORITY_RANK_CASE)
+            .order_by('_prio', 'created_at')
             .first()
         )
         if ticket is None:

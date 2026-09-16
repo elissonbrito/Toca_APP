@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ClipboardList, RefreshCw, Eye } from 'lucide-react'
 import { ordersAPI } from '../../services/api'
 import { StatusBadge, LoadingSpinner, EmptyState, PageHeader } from '../../components/ui/index.jsx'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 
 const STATUS_OPTS = ['ABERTO', 'PREPARANDO', 'PRONTO', 'FINALIZADO', 'CANCELADO']
 
@@ -12,8 +13,8 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('ABERTO')
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((opts = {}) => {
+    if (!opts.silent) setLoading(true)
     const params = filter !== 'ALL' ? { status: filter } : {}
     ordersAPI.list(params)
       .then(r => setOrders(r.data.results || r.data))
@@ -22,6 +23,7 @@ export default function OrdersPage() {
   }, [filter])
 
   useEffect(() => { load() }, [load])
+  useAutoRefresh(useCallback(() => load({ silent: true }), [load]), { interval: 5000 })
 
   return (
     <div className="animate-fade-in space-y-6">

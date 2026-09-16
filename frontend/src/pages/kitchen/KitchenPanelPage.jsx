@@ -3,6 +3,7 @@ import { RefreshCw, ChefHat, Clock } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { kitchenAPI } from '../../services/api'
 import { StatusBadge, LoadingSpinner, EmptyState, PageHeader } from '../../components/ui/index.jsx'
+import { useAutoRefresh } from '../../hooks/useAutoRefresh'
 
 const ITEM_STATUSES = ['PENDENTE', 'PREPARANDO', 'PRONTO']
 const STATUS_LABELS = { PENDENTE: 'Pendente', PREPARANDO: 'Preparando', PRONTO: 'Pronto' }
@@ -63,12 +64,8 @@ export default function KitchenPanelPage({ sector = 'COZINHA' }) {
       .finally(() => setLoading(false))
   }, [sector])
 
-  useEffect(() => {
-    load()
-    if (!autoRefresh) return
-    const interval = setInterval(load, 30000)
-    return () => clearInterval(interval)
-  }, [load, autoRefresh])
+  useEffect(() => { load() }, [load])
+  useAutoRefresh(load, { interval: 4000, enabled: autoRefresh })
 
   const handleStatusChange = async (itemId, newStatus) => {
     try {
@@ -96,7 +93,7 @@ export default function KitchenPanelPage({ sector = 'COZINHA' }) {
             <label className="flex items-center gap-2 text-sm text-brand-muted cursor-pointer">
               <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}
                 className="accent-brand-gold" />
-              Auto-refresh (30s)
+              Auto-refresh (4s)
             </label>
             <button onClick={load} className="btn-ghost p-2"><RefreshCw size={16} /></button>
           </div>
