@@ -202,6 +202,7 @@ function OpenRegisterModal({
         value={initialAmount}
         onChangeText={setInitialAmount}
         keyboardType="decimal-pad"
+        selectTextOnFocus
         style={styles.textInput}
       />
       <AppButton label="Abrir caixa" variant="gold" onPress={handleSubmit} loading={isSubmitting} />
@@ -251,6 +252,7 @@ function CloseRegisterModal({
         value={finalAmount}
         onChangeText={setFinalAmount}
         keyboardType="decimal-pad"
+        selectTextOnFocus
         placeholder="0,00"
         placeholderTextColor={Colors.muted}
         style={styles.textInput}
@@ -299,7 +301,13 @@ function PaymentModal({
       <ThemedText type="label" color="muted">
         Valor (R$)
       </ThemedText>
-      <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={styles.textInput} />
+      <TextInput
+        value={amount}
+        onChangeText={setAmount}
+        keyboardType="decimal-pad"
+        selectTextOnFocus
+        style={styles.textInput}
+      />
       <ThemedText type="label" color="muted">
         Forma de pagamento
       </ThemedText>

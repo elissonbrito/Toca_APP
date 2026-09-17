@@ -275,6 +275,8 @@ function CreateTicketModal({
         value={peopleCount}
         onChangeText={setPeopleCount}
         keyboardType="number-pad"
+        selectTextOnFocus
+        returnKeyType="done"
         style={styles.textInput}
       />
       <ThemedText type="label" color="muted">
