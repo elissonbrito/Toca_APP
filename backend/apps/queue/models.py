@@ -41,7 +41,9 @@ PRIORITY_RANK = {
 
 
 class QueueTicket(models.Model):
-    code = models.CharField('Código', max_length=10, unique=True)
+    # Não é globalmente único de propósito: o código reinicia por dia e por
+    # fila (prioritária/normal) — "001" de hoje e "001" de ontem coexistem.
+    code = models.CharField('Código', max_length=10, db_index=True)
     customer_name = models.CharField('Nome do Cliente', max_length=150, blank=True)
     people_count = models.PositiveIntegerField('Número de Pessoas', default=1)
     status = models.CharField(
@@ -88,17 +90,22 @@ class QueueTicket(models.Model):
         return PRIORITY_RANK.get(self.priority_category, 2)
 
     @classmethod
-    def generate_code(cls):
-        """Generate next sequential ticket code."""
+    def generate_code(cls, is_priority=False):
+        """Gera o próximo código do dia — duas contagens independentes, cada
+        uma reiniciando em 1 todo dia: "P001", "P002"... para senha
+        prioritária; "001", "002"... para senha normal.
+        """
         from django.utils import timezone
         today = timezone.now().date()
-        prefix = today.strftime('%d%m')
-        last = cls.objects.filter(code__startswith=prefix).order_by('-code').first()
+        qs = cls.objects.filter(created_at__date=today)
+        qs = qs.filter(code__startswith='P') if is_priority else qs.exclude(code__startswith='P')
+        last = qs.select_for_update().order_by('-id').first()
+
+        seq = 1
         if last:
+            raw = last.code[1:] if is_priority else last.code
             try:
-                seq = int(last.code[4:]) + 1
-            except (ValueError, IndexError):
+                seq = int(raw) + 1
+            except ValueError:
                 seq = 1
-        else:
-            seq = 1
-        return f'{prefix}{seq:03d}'
+        return f'{"P" if is_priority else ""}{seq:03d}'

@@ -82,10 +82,15 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def call_next(self, request):
-        ticket = QueueService.call_next(request.user)
+        """POST { group?: 'all'|'priority'|'normal' } — chama a próxima senha
+        daquela fila específica, pra recepção escolher de qual chamar."""
+        group = request.data.get('group', 'all')
+        if group not in ('all', 'priority', 'normal'):
+            return Response({'group': 'Valor inválido — use all, priority ou normal.'}, status=400)
+        ticket = QueueService.call_next(request.user, group=group)
         AuditService.log(
             user=request.user, action='UPDATE', entity='QueueTicket', entity_id=ticket.id,
-            details=f'Senha {ticket.code} chamada', request=request,
+            details=f'Senha {ticket.code} chamada (fila: {group})', request=request,
         )
         return Response(QueueTicketSerializer(ticket).data)
 

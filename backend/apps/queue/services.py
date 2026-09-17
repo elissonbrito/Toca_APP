@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.tables.models import TableStatus
-from .models import QueueTicket, TicketStatus, PRIORITY_RANK
+from .models import QueueTicket, TicketStatus, PriorityCategory, PRIORITY_RANK
 
 OPEN_STATUSES = {TicketStatus.AGUARDANDO, TicketStatus.CHAMADO}
 CLOSED_TICKET_STATUSES = {TicketStatus.FINALIZADO, TicketStatus.CANCELADO}
@@ -25,9 +25,14 @@ class QueueService:
     @staticmethod
     @transaction.atomic
     def issue_ticket(*, customer_name='', people_count=1, priority_category='NENHUMA'):
-        """Emite uma nova senha com código sequencial do dia."""
+        """Emite uma nova senha com código sequencial do dia.
+
+        Prioritária -> "P001", "P002"...; normal -> "001", "002"... — duas
+        contagens independentes.
+        """
+        is_priority = priority_category != PriorityCategory.NENHUMA
         return QueueTicket.objects.create(
-            code=QueueTicket.generate_code(),
+            code=QueueTicket.generate_code(is_priority=is_priority),
             customer_name=customer_name,
             people_count=people_count,
             priority_category=priority_category,
@@ -35,21 +40,26 @@ class QueueService:
 
     @staticmethod
     @transaction.atomic
-    def call_next(called_by):
-        """Chama a próxima senha aguardando, respeitando a ordem de prioridade
-        (80+ primeiro, demais prioridades em seguida, depois os demais — dentro
-        de cada grupo, por ordem de chegada). Lança ValidationError se vazia.
+    def call_next(called_by, group='all'):
+        """Chama a próxima senha aguardando.
+
+        ``group``: 'all' (padrão — respeita a ordem legal de prioridade: 80+
+        primeiro, demais prioridades em seguida, depois os demais), 'priority'
+        (só a fila prioritária) ou 'normal' (só a fila normal) — para a
+        recepção poder chamar de qualquer uma das duas filas conforme a
+        disponibilidade do salão. Dentro de cada grupo, sempre por ordem de
+        chegada. Lança ValidationError se o grupo escolhido estiver vazio.
         """
-        ticket = (
-            QueueTicket.objects
-            .select_for_update()
-            .filter(status=TicketStatus.AGUARDANDO)
-            .annotate(_prio=PRIORITY_RANK_CASE)
-            .order_by('_prio', 'created_at')
-            .first()
-        )
+        qs = QueueTicket.objects.select_for_update().filter(status=TicketStatus.AGUARDANDO)
+        if group == 'priority':
+            qs = qs.exclude(priority_category=PriorityCategory.NENHUMA)
+        elif group == 'normal':
+            qs = qs.filter(priority_category=PriorityCategory.NENHUMA)
+
+        ticket = qs.annotate(_prio=PRIORITY_RANK_CASE).order_by('_prio', 'created_at').first()
         if ticket is None:
-            raise ValidationError('Nenhuma senha na fila.')
+            msgs = {'priority': 'Nenhuma senha prioritária na fila.', 'normal': 'Nenhuma senha na fila normal.'}
+            raise ValidationError(msgs.get(group, 'Nenhuma senha na fila.'))
         ticket.status = TicketStatus.CHAMADO
         ticket.called_at = timezone.now()
         ticket.called_by = called_by
