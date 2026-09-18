@@ -98,3 +98,15 @@ export async function updateOrderStatus(orderId: number, status: OrderStatus): P
   const { data } = await api.post<Order>(`/orders/${orderId}/update_status/`, { status });
   return data;
 }
+
+/** Cancela a conta (soft-cancel — nunca apaga do banco). Só caixa/gerência/admin. */
+export async function cancelOrder(orderId: number): Promise<Order> {
+  const { data } = await api.delete<Order>(`/orders/${orderId}/`);
+  return data;
+}
+
+/** Troca a mesa inteira da comanda. Só caixa/admin. */
+export async function transferOrderTable(orderId: number, tableId: number): Promise<Order> {
+  const { data } = await api.post<Order>(`/orders/${orderId}/transfer-table/`, { table: tableId });
+  return data;
+}

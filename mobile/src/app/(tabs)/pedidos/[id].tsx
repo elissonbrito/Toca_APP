@@ -1,26 +1,30 @@
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { fetchMenuCategories, fetchMenuItems, type MenuCategory, type MenuItemSummary } from '@/api/menu';
 import {
   addOrderItem,
+  cancelOrder,
   closeBill,
   fetchOrder,
   removeOrderItem,
   reopenBill,
+  transferOrderTable,
   type Order,
   type OrderItem,
 } from '@/api/orders';
+import type { RestaurantTable } from '@/api/tables';
 import { AppButton } from '@/components/app-button';
 import { AppModal } from '@/components/app-modal';
 import { StatusBadge } from '@/components/status-badge';
+import { TablePickerModal } from '@/components/table-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { isCaixa, isFloorStaff } from '@/utils/roles';
+import { isCaixa, isCaixaOrAdmin, isFloorStaff } from '@/utils/roles';
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,6 +35,7 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddModalVisible, setAddModalVisible] = useState(false);
+  const [isTransferModalVisible, setTransferModalVisible] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
 
   const load = useCallback(
@@ -99,6 +104,38 @@ export default function OrderDetailScreen() {
     }
   }
 
+  function handleCancelOrder() {
+    Alert.alert('Cancelar conta', 'Cancelar esta conta? Essa ação não pode ser desfeita.', [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Cancelar conta',
+        style: 'destructive',
+        onPress: async () => {
+          setIsBusy(true);
+          try {
+            await cancelOrder(orderId);
+            router.back();
+          } catch (err: any) {
+            Alert.alert('Erro', err?.response?.data?.detail ?? 'Não foi possível cancelar a conta.');
+            setIsBusy(false);
+          }
+        },
+      },
+    ]);
+  }
+
+  async function handleTransferTable(table: RestaurantTable) {
+    setIsBusy(true);
+    try {
+      setOrder(await transferOrderTable(orderId, table.id));
+      setTransferModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Erro', err?.response?.data?.table ?? 'Não foi possível trocar a mesa.');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   if (isLoading || !order) {
     return (
       <ThemedView style={styles.center}>
@@ -112,6 +149,8 @@ export default function OrderDetailScreen() {
     isFloorStaff(user?.role) && !['FECHAMENTO', 'FINALIZADO', 'CANCELADO'].includes(order.status) && order.items.some((i) => i.status !== 'CANCELADO');
   const canReopenBill = isCaixa(user?.role) && order.status === 'FECHAMENTO';
   const canRemoveItems = isCaixa(user?.role) && !['FINALIZADO', 'CANCELADO'].includes(order.status);
+  const canCancelOrder = isCaixa(user?.role) && !['FINALIZADO', 'CANCELADO'].includes(order.status);
+  const canTransferTable = isCaixaOrAdmin(user?.role) && !!order.table && !['FINALIZADO', 'CANCELADO'].includes(order.status);
 
   return (
     <ThemedView style={styles.container}>
@@ -182,6 +221,17 @@ export default function OrderDetailScreen() {
         {canReopenBill && (
           <AppButton label="Reabrir conta" variant="ghost" onPress={handleReopenBill} loading={isBusy} />
         )}
+        {canTransferTable && (
+          <AppButton
+            label="Trocar de mesa"
+            variant="ghost"
+            onPress={() => setTransferModalVisible(true)}
+            loading={isBusy}
+          />
+        )}
+        {canCancelOrder && (
+          <AppButton label="Cancelar conta" variant="danger" onPress={handleCancelOrder} loading={isBusy} />
+        )}
       </View>
 
       <AddItemModal
@@ -192,6 +242,14 @@ export default function OrderDetailScreen() {
           load(true);
         }}
         orderId={orderId}
+      />
+
+      <TablePickerModal
+        visible={isTransferModalVisible}
+        title="Trocar de mesa"
+        onClose={() => setTransferModalVisible(false)}
+        onSelect={handleTransferTable}
+        isSubmitting={isBusy}
       />
     </ThemedView>
   );
@@ -257,6 +315,11 @@ function AddItemModal({
           <ThemedText color="muted" type="small">
             R$ {selected.price} · {selected.sector_display}
           </ThemedText>
+          {selected.description ? (
+            <ThemedText color="muted" type="small">
+              {selected.description}
+            </ThemedText>
+          ) : null}
 
           <View style={styles.stepperRow}>
             <Pressable
@@ -310,8 +373,8 @@ function AddItemModal({
               <Pressable onPress={() => setSelected(item)} style={styles.menuItemRow}>
                 <View style={{ flex: 1 }}>
                   <ThemedText type="default">{item.name}</ThemedText>
-                  <ThemedText color="muted" type="small">
-                    {item.sector_display}
+                  <ThemedText color="muted" type="small" numberOfLines={1}>
+                    {item.description || item.sector_display}
                   </ThemedText>
                 </View>
                 <ThemedText type="smallBold" color="gold">

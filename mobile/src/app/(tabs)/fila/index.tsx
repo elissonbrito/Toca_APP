@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollVi
 import {
   assignTicketToTable,
   callNextTicket,
+  callTicket,
   cancelTicket,
   createQueueTicket,
   fetchQueue,
@@ -13,10 +14,11 @@ import {
   type PriorityCategory,
   type QueueTicket,
 } from '@/api/queue';
-import { fetchTables, type RestaurantTable } from '@/api/tables';
+import type { RestaurantTable } from '@/api/tables';
 import { AppButton } from '@/components/app-button';
 import { AppModal } from '@/components/app-modal';
 import { StatusBadge } from '@/components/status-badge';
+import { TablePickerModal } from '@/components/table-picker-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Spacing } from '@/constants/theme';
@@ -71,6 +73,18 @@ export default function FilaScreen() {
       await load(true);
     } catch (err: any) {
       Alert.alert('Fila', err?.response?.data?.detail ?? 'Não há senhas aguardando.');
+    }
+  }
+
+  async function handleCallTicket(ticket: QueueTicket) {
+    setBusyId(ticket.id);
+    try {
+      await callTicket(ticket.id);
+      await load(true);
+    } catch (err: any) {
+      Alert.alert('Fila', err?.response?.data?.detail ?? 'Não foi possível chamar esta senha.');
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -166,6 +180,15 @@ export default function FilaScreen() {
                 loading={busyId === item.id}
                 style={styles.actionButton}
               />
+              {item.status === 'AGUARDANDO' && (
+                <AppButton
+                  label="Chamar"
+                  variant="gold"
+                  onPress={() => handleCallTicket(item)}
+                  loading={busyId === item.id}
+                  style={styles.actionButton}
+                />
+              )}
               {item.status === 'CHAMADO' && (
                 <AppButton
                   label="Destinar mesa"
@@ -308,17 +331,7 @@ function AssignTableModal({
   onClose: () => void;
   onAssigned: (orderId: number | null) => void;
 }) {
-  const [tables, setTables] = useState<RestaurantTable[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!ticket) return;
-    setIsLoading(true);
-    fetchTables()
-      .then((all) => setTables(all.filter((t) => t.status === 'LIVRE')))
-      .finally(() => setIsLoading(false));
-  }, [ticket]);
 
   async function handleAssign(table: RestaurantTable) {
     if (!ticket) return;
@@ -334,33 +347,13 @@ function AssignTableModal({
   }
 
   return (
-    <AppModal visible={!!ticket} title="Destinar mesa" onClose={onClose}>
-      {isLoading ? (
-        <ActivityIndicator color={Colors.gold} />
-      ) : (
-        <FlatList
-          data={tables}
-          keyExtractor={(item) => String(item.id)}
-          style={{ maxHeight: 320 }}
-          ListEmptyComponent={
-            <ThemedText color="muted" style={styles.empty}>
-              Nenhuma mesa livre.
-            </ThemedText>
-          }
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => handleAssign(item)}
-              disabled={isSubmitting}
-              style={styles.tableRow}>
-              <ThemedText>Mesa {item.number}</ThemedText>
-              <ThemedText color="muted" type="small">
-                {item.seats} lugares
-              </ThemedText>
-            </Pressable>
-          )}
-        />
-      )}
-    </AppModal>
+    <TablePickerModal
+      visible={!!ticket}
+      title="Destinar mesa"
+      onClose={onClose}
+      onSelect={handleAssign}
+      isSubmitting={isSubmitting}
+    />
   );
 }
 
@@ -425,13 +418,5 @@ const styles = StyleSheet.create({
   chipActive: {
     backgroundColor: Colors.gold,
     borderColor: Colors.gold,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.two,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
 });

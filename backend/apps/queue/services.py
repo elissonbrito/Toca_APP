@@ -67,6 +67,25 @@ class QueueService:
         return ticket
 
     @staticmethod
+    @transaction.atomic
+    def call_specific(ticket, called_by):
+        """Chama uma senha específica, fora da ordem da fila.
+
+        Dá liberdade pra recepção chamar qualquer senha aguardando (ex.: uma
+        mesa pequena que acabou de vagar), mesmo pulando quem está na frente
+        — a ordem automática de ``call_next`` continua disponível para quem
+        preferir seguir a fila à risca.
+        """
+        ticket = QueueTicket.objects.select_for_update().get(pk=ticket.pk)
+        if ticket.status != TicketStatus.AGUARDANDO:
+            raise ValidationError('Esta senha não está aguardando — só é possível chamar quem está na fila.')
+        ticket.status = TicketStatus.CHAMADO
+        ticket.called_at = timezone.now()
+        ticket.called_by = called_by
+        ticket.save(update_fields=['status', 'called_at', 'called_by'])
+        return ticket
+
+    @staticmethod
     def set_status(ticket, new_status):
         if new_status not in TicketStatus.values:
             raise ValidationError({'status': 'Status inválido.'})

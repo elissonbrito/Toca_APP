@@ -5,7 +5,6 @@ Usage: python manage.py seed_data
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from apps.tables.models import Table
-from apps.menu.models import MenuCategory, MenuItem
 
 User = get_user_model()
 
@@ -47,36 +46,7 @@ class Command(BaseCommand):
             seats = 2 if n <= 4 else (6 if n >= 17 else 4)
             Table.objects.get_or_create(number=n, defaults={'seats': seats})
         self.stdout.write(self.style.SUCCESS('✅ 20 mesas criadas.'))
-
-        # Create sample menu (categories + items) so Pedidos tem o que lançar
-        categories = {
-            'Pratos Principais': 1,
-            'Bebidas': 2,
-        }
-        cat_objs = {}
-        for name, order in categories.items():
-            cat, _ = MenuCategory.objects.get_or_create(name=name, defaults={'display_order': order})
-            cat_objs[name] = cat
-
-        sample_items = [
-            {'category': 'Pratos Principais', 'name': 'Picanha na Brasa', 'sector': 'PARRILLA',
-             'price': '89.90', 'sku': 'PIC001', 'ncm': '02013000'},
-            {'category': 'Pratos Principais', 'name': 'Costela Bovina', 'sector': 'PARRILLA',
-             'price': '69.90', 'sku': 'COS001', 'ncm': '02013000'},
-            {'category': 'Pratos Principais', 'name': 'Batata Frita', 'sector': 'COZINHA',
-             'price': '24.90', 'sku': 'BAT001', 'ncm': '20041000'},
-            {'category': 'Bebidas', 'name': 'Refrigerante Lata', 'sector': 'BAR',
-             'price': '8.00', 'sku': 'REF001', 'ncm': '22021000'},
-            {'category': 'Bebidas', 'name': 'Água Mineral', 'sector': 'BAR',
-             'price': '6.00', 'sku': 'AGU001', 'ncm': '22011000'},
-        ]
-        for item in sample_items:
-            category = cat_objs[item.pop('category')]
-            MenuItem.objects.get_or_create(
-                sku=item['sku'],
-                defaults={**item, 'category': category},
-            )
-        self.stdout.write(self.style.SUCCESS('✅ Cardápio de exemplo criado (2 categorias, 5 itens).'))
+        self.stdout.write('ℹ️  Para popular o cardápio, rode: python manage.py seed_menu')
 
         self.stdout.write(self.style.SUCCESS('\n🎉 Seed concluído com sucesso!\n'))
         self.stdout.write('Credenciais padrão (senha: 123456):')

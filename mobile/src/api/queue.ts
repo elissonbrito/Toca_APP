@@ -57,6 +57,12 @@ export async function callNextTicket(group: 'all' | 'priority' | 'normal' = 'all
   return data;
 }
 
+/** Chama uma senha específica, fora da ordem da fila. */
+export async function callTicket(id: number): Promise<QueueTicket> {
+  const { data } = await api.post<QueueTicket>(`/queue/${id}/call/`);
+  return data;
+}
+
 export async function finalizeTicket(id: number): Promise<QueueTicket> {
   const { data } = await api.post<QueueTicket>(`/queue/${id}/finalize/`);
   return data;

@@ -41,7 +41,7 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
         if self.action == 'edit':
             # editar nome/qtd pessoas: quem já gerencia a fila
             return [IsRecepcao()]
-        # create, call_next, finalize, cancel, assign_table -> ADM/GERENTE/RECEPÇÃO
+        # create, call_next, call, finalize, cancel, assign_table -> ADM/GERENTE/RECEPÇÃO
         return [IsRecepcao()]
 
     def create(self, request, *args, **kwargs):
@@ -91,6 +91,17 @@ class QueueTicketViewSet(viewsets.ModelViewSet):
         AuditService.log(
             user=request.user, action='UPDATE', entity='QueueTicket', entity_id=ticket.id,
             details=f'Senha {ticket.code} chamada (fila: {group})', request=request,
+        )
+        return Response(QueueTicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'])
+    def call(self, request, pk=None):
+        """POST /api/queue/{id}/call/ — chama esta senha específica, fora da
+        ordem da fila (ex.: mesa pequena vagou e a próxima da fila é grande)."""
+        ticket = QueueService.call_specific(self.get_object(), request.user)
+        AuditService.log(
+            user=request.user, action='UPDATE', entity='QueueTicket', entity_id=ticket.id,
+            details=f'Senha {ticket.code} chamada fora da ordem', request=request,
         )
         return Response(QueueTicketSerializer(ticket).data)
 
